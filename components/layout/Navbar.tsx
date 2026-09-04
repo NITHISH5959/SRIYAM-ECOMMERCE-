@@ -5,7 +5,29 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
-import { ShoppingBag, Menu, X, MessageCircle, ShieldCheck, User, LogOut, Package, MapPin, ChevronDown } from 'lucide-react';
+import { ShoppingBag, Menu, X, MessageCircle, ShieldCheck, User, LogOut, Package, MapPin, ChevronDown, CheckCircle2 } from 'lucide-react';
+
+// ── Slide-in toast that auto-dismisses ────────────────────────────────────────
+function Toast({ message }: { message: string }) {
+  const [leaving, setLeaving] = useState(false);
+
+  // Trigger the slide-out 200ms before the parent removes this component
+  // (CartContext clears toastMessage after 3 s; we start exit at 2.8 s)
+  useEffect(() => {
+    const t = setTimeout(() => setLeaving(true), 2750);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div
+      className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-zinc-900 text-white text-xs font-medium shadow-2xl border border-zinc-700 max-w-xs ${leaving ? 'animate-toast-out' : 'animate-toast-in'}`}
+      style={{ willChange: 'transform, opacity' }}
+    >
+      <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
 
 export default function Navbar() {
   const { totalItems, toastMessage, user, setUser } = useCart();
@@ -33,13 +55,8 @@ export default function Navbar() {
 
   return (
     <>
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 bg-zinc-900 text-white px-4 py-3 rounded-lg shadow-xl text-xs font-medium flex items-center gap-2 animate-bounce">
-          <div className="w-2 h-2 rounded-full bg-amber-500" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
+      {/* Slide-in toast — uses key so it remounts (and re-animates) on each new message */}
+      {toastMessage && <Toast key={toastMessage + Date.now()} message={toastMessage} />}
 
       {/* Top Banner */}
       <div className="bg-zinc-900 text-zinc-300 text-[11px] font-medium py-1.5 px-4 text-center tracking-wide border-b border-zinc-800 flex justify-center items-center gap-4">
@@ -145,11 +162,15 @@ export default function Navbar() {
               <span>Admin</span>
             </Link>
 
-            {/* Cart */}
+            {/* Cart icon — badge pops on count change via React key */}
             <Link href="/cart" className="relative p-2 text-zinc-700 hover:text-amber-800 transition-colors" aria-label="Open cart">
               <ShoppingBag className="w-5 h-5 stroke-[1.75]" />
               {totalItems > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-amber-700 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-sm animate-pulse">
+                <span
+                  key={totalItems}
+                  className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-amber-700 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-sm animate-badge-pop"
+                  style={{ willChange: 'transform, opacity' }}
+                >
                   {totalItems}
                 </span>
               )}

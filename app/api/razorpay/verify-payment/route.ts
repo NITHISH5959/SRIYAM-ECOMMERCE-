@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { createOrder, deductStock, getProducts, validateCouponCode, incrementCouponUsageCount } from '@/lib/data';
+import { createOrder, deductStock, deductVariantStock, getVariantsByIds, getProducts, validateCouponCode, incrementCouponUsageCount } from '@/lib/data';
 import { validateEnv } from '@/lib/env';
 import { verifyPaymentLimiter, getClientIp } from '@/lib/rate-limit';
 
@@ -25,10 +25,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: 'Invalid order data: No items' }, { status: 400 });
     }
 
-    // ── 1. Recalculate Subtotal & Verify Items Server-Side ───────────────────
+    // ── 1. Fetch lookup data: products + variants ─────────────────────────────
+    const allProducts = await getProducts();
+
+    // Collect variant IDs from Frame items
+    const variantIds: string[] = orderData.items
+      .filter((i: any) => i.variant_id)
+      .map((i: any) => i.variant_id);
+    const allVariants = await getVariantsByIds(variantIds);
+
+    // ── 2. Recalculate Subtotal & Verify Items Server-Side ────────────────────
     let calculatedSubtotal = 0;
     const verifiedItems = [];
-    const allProducts = await getProducts();
 
     for (const item of orderData.items) {
       const dbProduct = allProducts.find((p) => p.id === item.product_id);
@@ -36,7 +44,23 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: 'One or more products could not be verified.' }, { status: 400 });
       }
 
-      const truePrice = dbProduct.price;
+      let truePrice: number;
+
+      if (item.variant_id) {
+        // Frame product — look up price from product_variants (prevents price spoofing)
+        const dbVariant = allVariants.find((v) => v.id === item.variant_id);
+        if (!dbVariant) {
+          return NextResponse.json(
+            { success: false, message: `Variant for "${dbProduct.name}" (${item.size || ''}) could not be verified.` },
+            { status: 400 }
+          );
+        }
+        truePrice = dbVariant.price;
+      } else {
+        // Rack Poster — use products.price
+        truePrice = dbProduct.price;
+      }
+
       calculatedSubtotal += truePrice * item.quantity;
 
       verifiedItems.push({
@@ -45,10 +69,13 @@ export async function POST(request: Request) {
         price: truePrice,
         quantity: item.quantity,
         image: item.image || dbProduct.images?.[0] || '',
+        // Preserve variant metadata in the stored order item
+        ...(item.variant_id && { variant_id: item.variant_id }),
+        ...(item.size && { size: item.size }),
       });
     }
 
-    // ── 2. Validate Coupon Server-Side ──────────────────────────────────────
+    // ── 3. Validate Coupon Server-Side ──────────────────────────────────────
     let calculatedDiscount = 0;
     let isFreeShipping = false;
 
@@ -60,7 +87,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── 3. Validate Shipping Server-Side ────────────────────────────────────
+    // ── 4. Validate Shipping Server-Side ────────────────────────────────────
     let calculatedShipping = 0;
     const freeShippingThreshold = 999;
     const defaultShippingFee = 50;
@@ -73,19 +100,38 @@ export async function POST(request: Request) {
     const calculatedTotal =
       Math.max(0, calculatedSubtotal - calculatedDiscount) + calculatedShipping;
 
-    // ── 4. Stock pre-check ──────────────────────────────────────────────────
-    const stockError = await deductStock(
-      verifiedItems.map((i: any) => ({
-        product_id: i.product_id,
-        quantity: i.quantity,
-        name: i.name,
-      }))
-    );
-    if (stockError) {
-      return NextResponse.json({ success: false, message: stockError }, { status: 400 });
+    // ── 5. Stock deduction — route by item type ──────────────────────────────
+    // Variant items (Frames) and non-variant items (Rack Posters) deducted separately
+    const variantItems = verifiedItems.filter((i: any) => i.variant_id);
+    const nonVariantItems = verifiedItems.filter((i: any) => !i.variant_id);
+
+    if (variantItems.length > 0) {
+      const variantStockError = await deductVariantStock(
+        variantItems.map((i: any) => ({
+          variant_id: i.variant_id,
+          quantity: i.quantity,
+          name: i.size ? `${i.name} (${i.size})` : i.name,
+        }))
+      );
+      if (variantStockError) {
+        return NextResponse.json({ success: false, message: variantStockError }, { status: 400 });
+      }
     }
 
-    // ── 5. Payment signature verification ──────────────────────────────────
+    if (nonVariantItems.length > 0) {
+      const stockError = await deductStock(
+        nonVariantItems.map((i: any) => ({
+          product_id: i.product_id,
+          quantity: i.quantity,
+          name: i.name,
+        }))
+      );
+      if (stockError) {
+        return NextResponse.json({ success: false, message: stockError }, { status: 400 });
+      }
+    }
+
+    // ── 6. Payment signature verification ──────────────────────────────────
     const secret = process.env.RAZORPAY_KEY_SECRET || '';
     const isTestMode =
       !secret ||
@@ -115,7 +161,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── 6. Create confirmed order record ──────────────────────────────────
+    // ── 7. Create confirmed order record ──────────────────────────────────
     const newOrder = await createOrder({
       user_id: orderData.user_id || 'demo_user_id',
       items: verifiedItems,
@@ -130,7 +176,7 @@ export async function POST(request: Request) {
       shipping_address: orderData.shipping_address,
     });
 
-    // ── 7. Increment coupon used_count (only after confirmed payment) ────
+    // ── 8. Increment coupon used_count (only after confirmed payment) ────
     if (orderData.coupon_code) {
       await incrementCouponUsageCount(orderData.coupon_code);
     }

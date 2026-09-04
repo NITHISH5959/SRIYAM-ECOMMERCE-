@@ -7,7 +7,8 @@ import { Product } from '@/types';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
 import PlaceholderImage from '../ui/PlaceholderImage';
-import { ShoppingBag, ArrowUpRight } from 'lucide-react';
+import { ShoppingBag, ArrowUpRight, Layers, Check } from 'lucide-react';
+import { useAddFeedback } from '@/hooks/useAddFeedback';
 
 interface ProductCardProps {
   product: Product;
@@ -15,13 +16,17 @@ interface ProductCardProps {
 
 export default function ProductCard({ product }: ProductCardProps) {
   const { addToCart } = useCart();
+  const { isAdded, trigger } = useAddFeedback(() => addToCart(product, 1));
+
+  // Frame products have variants — show "From ₹" and direct to PDP for size selection
+  const isFrame = product.category?.slug === 'frames';
 
   const price = product.price ?? STORE_CONFIG.defaultPricing.price;
   const compareAtPrice = product.compare_at_price ?? STORE_CONFIG.defaultPricing.compareAtPrice;
 
-  // Auto-calculated discount percentage
+  // Auto-calculated discount percentage (not shown for Frames since price varies by size)
   const discountPercentage =
-    compareAtPrice > price
+    !isFrame && compareAtPrice > price
       ? Math.round(((compareAtPrice - price) / compareAtPrice) * 100)
       : 0;
 
@@ -82,23 +87,56 @@ export default function ProductCard({ product }: ProductCardProps) {
         {/* Pricing & Cart Action */}
         <div className="pt-2 border-t border-zinc-100 flex items-center justify-between">
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-bold text-zinc-900">
-              {STORE_CONFIG.defaultPricing.currency}{price.toLocaleString()}
-            </span>
-            {compareAtPrice > price && (
-              <span className="text-xs text-zinc-400 line-through font-normal">
-                {STORE_CONFIG.defaultPricing.currency}{compareAtPrice.toLocaleString()}
+            {isFrame ? (
+              <span className="text-sm font-bold text-zinc-900">
+                <span className="text-[11px] font-normal text-zinc-500 mr-0.5">From</span>
+                {STORE_CONFIG.defaultPricing.currency}{price.toLocaleString()}
               </span>
+            ) : (
+              <>
+                <span className="text-sm font-bold text-zinc-900">
+                  {STORE_CONFIG.defaultPricing.currency}{price.toLocaleString()}
+                </span>
+                {compareAtPrice > price && (
+                  <span className="text-xs text-zinc-400 line-through font-normal">
+                    {STORE_CONFIG.defaultPricing.currency}{compareAtPrice.toLocaleString()}
+                  </span>
+                )}
+              </>
             )}
           </div>
 
-          <button
-            onClick={() => addToCart(product, 1)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 text-white hover:bg-amber-800 rounded-lg text-xs font-semibold tracking-wide transition-colors shadow-sm"
-          >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            <span>Add</span>
-          </button>
+          {isFrame ? (
+            // Frames require size selection on the PDP before adding to cart
+            <Link
+              href={`/product/${product.slug}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 text-white hover:bg-amber-800 rounded-lg text-xs font-semibold tracking-wide transition-colors shadow-sm"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Select Size</span>
+            </Link>
+          ) : (
+            <button
+              onClick={trigger}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all shadow-sm select-none ${
+                isAdded
+                  ? 'bg-amber-800 text-white animate-btn-success'
+                  : 'bg-zinc-900 text-white hover:bg-amber-800'
+              }`}
+            >
+              {isAdded ? (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Added</span>
+                </>
+              ) : (
+                <>
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  <span>Add</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

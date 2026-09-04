@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
-import { createClient } from '@/lib/supabase/client';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { Mail, Lock, ArrowRight, UserCheck } from 'lucide-react';
 
 function LoginContent() {
@@ -26,6 +26,17 @@ function LoginContent() {
     setErrorMessage('');
 
     try {
+      // Demo mode: Supabase not configured — allow any login for local testing
+      if (!isSupabaseConfigured()) {
+        setUser({
+          id: `usr_${Date.now()}`,
+          email: email,
+          name: email.split('@')[0] || 'Customer',
+        });
+        router.push(redirectUrl);
+        return;
+      }
+
       const supabase = createClient();
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -33,26 +44,21 @@ function LoginContent() {
       });
 
       if (error) {
-        setUser({
-          id: `usr_${Date.now()}`,
-          email: email,
-          name: email.split('@')[0] || 'Customer',
-        });
-      } else if (data?.user) {
+        // Real Supabase is configured — show the actual auth error
+        setErrorMessage(error.message || 'Invalid email or password. Please try again.');
+        return;
+      }
+
+      if (data?.user) {
         setUser({
           id: data.user.id,
           email: data.user.email || email,
           name: data.user.user_metadata?.full_name || email.split('@')[0],
         });
+        router.push(redirectUrl);
       }
-      router.push(redirectUrl);
     } catch (err: any) {
-      setUser({
-        id: `usr_${Date.now()}`,
-        email: email,
-        name: email.split('@')[0] || 'Customer',
-      });
-      router.push(redirectUrl);
+      setErrorMessage('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }

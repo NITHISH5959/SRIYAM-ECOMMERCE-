@@ -1,4 +1,4 @@
-import { Category, Product, Coupon, Address, Order } from '@/types';
+import { Category, Product, ProductVariant, Coupon, Address, Order } from '@/types';
 import { createClient, isSupabaseConfigured } from './supabase/client';
 
 export const INITIAL_CATEGORIES: Category[] = [
@@ -27,10 +27,18 @@ export const INITIAL_COUPONS: Coupon[] = [
   { id: 'c3', code: 'FREESHIP', type: 'free_shipping', value: 0, min_order_value: 999, usage_limit: 200, used_count: 32, expires_at: null, active: true },
 ];
 
+// ── In-memory demo variants for all 9 Frame products ──────────────────────────
+const FRAME_SLUGS = ['p1','p2','p3','p4','p5','p6','p7','p8','p9'];
+const INITIAL_VARIANTS: ProductVariant[] = FRAME_SLUGS.flatMap((pid, i) => [
+  { id: `v${i*2+1}`, product_id: pid, size: 'A3', price: 599, compare_at_price: 649, stock: 10, is_active: true },
+  { id: `v${i*2+2}`, product_id: pid, size: 'A4', price: 799, compare_at_price: 899, stock: 10, is_active: true },
+]);
+
 // In-memory stores
 let memoryProducts: Product[] = [...INITIAL_PRODUCTS];
 let memoryCoupons: Coupon[] = [...INITIAL_COUPONS];
 let memoryCategories: Category[] = [...INITIAL_CATEGORIES];
+let memoryVariants: ProductVariant[] = [...INITIAL_VARIANTS];
 let memoryAddresses: Address[] = [
   { id: 'addr_1', user_id: 'demo_user_id', name: 'Sriram Ramanathan', phone: '+91 98765 43210', line1: '42 South Mada Street, Mylapore', line2: 'Near Kapaleeshwarar Temple', city: 'Chennai', state: 'Tamil Nadu', pincode: '600004', is_default: true },
 ];
@@ -82,12 +90,32 @@ export async function getAllProductsAdmin(): Promise<Product[]> {
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {
   try {
-    if (!isSupabaseConfigured()) return memoryProducts.find(p => p.slug === slug) || null;
+    if (!isSupabaseConfigured()) {
+      const p = memoryProducts.find(p => p.slug === slug) || null;
+      if (p) {
+        const variants = memoryVariants.filter(v => v.product_id === p.id && v.is_active);
+        return { ...p, variants: variants.length > 0 ? variants : undefined };
+      }
+      return null;
+    }
     const supabase = createClient();
     const { data, error } = await supabase.from('products').select('id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories(id, name, slug)').eq('slug', slug).single();
-    if (!error && data) return data as unknown as Product;
+    if (!error && data) {
+      const product = data as unknown as Product;
+      // Fetch variants for this product (only Frame products have them)
+      const { data: vData } = await supabase.from('product_variants').select('id, product_id, size, price, compare_at_price, stock, is_active').eq('product_id', product.id).eq('is_active', true).order('size');
+      if (vData && vData.length > 0) {
+        product.variants = vData as ProductVariant[];
+      }
+      return product;
+    }
   } catch {}
-  return memoryProducts.find(p => p.slug === slug) || null;
+  const p = memoryProducts.find(p => p.slug === slug) || null;
+  if (p) {
+    const variants = memoryVariants.filter(v => v.product_id === p.id && v.is_active);
+    return { ...p, variants: variants.length > 0 ? variants : undefined };
+  }
+  return null;
 }
 
 /** Returns true if the string looks like a real Supabase UUID (not a local demo ID). */
@@ -138,6 +166,155 @@ export async function deleteProduct(id: string): Promise<boolean> {
   } catch {}
   memoryProducts = memoryProducts.filter(p => p.id !== id);
   return true;
+}
+
+// ─── Product Variants ────────────────────────────────────────────────────────
+
+export async function getVariantsByProductId(productId: string): Promise<ProductVariant[]> {
+  try {
+    if (!isSupabaseConfigured()) throw new Error('not configured');
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('product_variants')
+      .select('id, product_id, size, price, compare_at_price, stock, is_active')
+      .eq('product_id', productId)
+      .order('size');
+    if (!error && data) return data as ProductVariant[];
+  } catch {}
+  return memoryVariants.filter(v => v.product_id === productId);
+}
+
+/**
+ * Upserts A3 and A4 variant rows for a product.
+ * `variants` should be an array of at most 2 items with size, price, compare_at_price, stock.
+ * Also updates products.price to the minimum variant price so ProductCard shows the right "From ₹" price.
+ */
+export async function saveVariants(productId: string, variants: Array<{
+  id?: string;
+  size: string;
+  price: number;
+  compare_at_price: number;
+  stock: number;
+  is_active?: boolean;
+}>): Promise<boolean> {
+  try {
+    if (!isSupabaseConfigured()) throw new Error('not configured');
+    const supabase = createClient();
+    for (const v of variants) {
+      const row = {
+        product_id: productId,
+        size: v.size,
+        price: v.price,
+        compare_at_price: v.compare_at_price,
+        stock: v.stock,
+        is_active: v.is_active ?? true,
+      };
+      if (v.id && isRealUuid(v.id)) {
+        await supabase.from('product_variants').update(row).eq('id', v.id);
+      } else {
+        await supabase.from('product_variants')
+          .upsert(row, { onConflict: 'product_id,size' });
+      }
+    }
+    // Keep products.price synced to minimum variant price for ProductCard "From ₹" display
+    const minPrice = Math.min(...variants.map(v => v.price));
+    const minMrp = Math.min(...variants.map(v => v.compare_at_price));
+    await supabase.from('products').update({ price: minPrice, compare_at_price: minMrp }).eq('id', productId);
+    return true;
+  } catch {}
+  // Demo mode fallback
+  memoryVariants = memoryVariants.filter(v => v.product_id !== productId);
+  variants.forEach((v, i) => {
+    memoryVariants.push({
+      id: v.id || `v_${Date.now()}_${i}`,
+      product_id: productId,
+      size: v.size,
+      price: v.price,
+      compare_at_price: v.compare_at_price,
+      stock: v.stock,
+      is_active: v.is_active ?? true,
+    });
+  });
+  const minPrice = Math.min(...variants.map(v => v.price));
+  const minMrp = Math.min(...variants.map(v => v.compare_at_price));
+  const idx = memoryProducts.findIndex(p => p.id === productId);
+  if (idx !== -1) {
+    memoryProducts[idx] = { ...memoryProducts[idx], price: minPrice, compare_at_price: minMrp };
+  }
+  return true;
+}
+
+/** Fetch specific variants by their UUIDs — used in payment verification. */
+export async function getVariantsByIds(variantIds: string[]): Promise<ProductVariant[]> {
+  if (variantIds.length === 0) return [];
+  try {
+    if (!isSupabaseConfigured()) throw new Error('not configured');
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('product_variants')
+      .select('id, product_id, size, price, compare_at_price, stock, is_active')
+      .in('id', variantIds);
+    if (!error && data) return data as ProductVariant[];
+  } catch {}
+  return memoryVariants.filter(v => variantIds.includes(v.id));
+}
+
+/**
+ * Decrement stock for variant items (Frames).
+ * Mirrors deductStock but targets product_variants table.
+ */
+export async function deductVariantStock(
+  items: Array<{ variant_id: string; quantity: number; name: string }>
+): Promise<string | null> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createClient();
+      const ids = items.map(i => i.variant_id);
+      const { data: liveVariants, error } = await supabase
+        .from('product_variants')
+        .select('id, stock')
+        .in('id', ids);
+
+      if (!error && liveVariants) {
+        for (const item of items) {
+          const lv = liveVariants.find(v => v.id === item.variant_id);
+          if (!lv) return `"${item.name}" could not be found.`;
+          if (lv.stock < item.quantity) {
+            return `"${item.name}" only has ${lv.stock} unit(s) left in stock.`;
+          }
+        }
+        for (const item of items) {
+          await supabase.rpc('decrement_variant_stock', { p_variant_id: item.variant_id, qty: item.quantity });
+        }
+        // Sync memory
+        for (const item of items) {
+          const lv = liveVariants.find(v => v.id === item.variant_id);
+          const idx = memoryVariants.findIndex(v => v.id === item.variant_id);
+          if (idx !== -1 && lv) {
+            memoryVariants[idx] = { ...memoryVariants[idx], stock: Math.max(0, lv.stock - item.quantity) };
+          }
+        }
+        return null;
+      }
+    } catch (err) {
+      console.warn('[deductVariantStock] Live check failed, falling back to memory store:', err);
+    }
+  }
+
+  // Fallback: memory store
+  for (const item of items) {
+    const v = memoryVariants.find(v => v.id === item.variant_id);
+    if (v && v.stock < item.quantity) {
+      return `"${item.name}" only has ${v.stock} unit(s) left in stock.`;
+    }
+  }
+  for (const item of items) {
+    const idx = memoryVariants.findIndex(v => v.id === item.variant_id);
+    if (idx !== -1) {
+      memoryVariants[idx] = { ...memoryVariants[idx], stock: Math.max(0, memoryVariants[idx].stock - item.quantity) };
+    }
+  }
+  return null;
 }
 
 /**
@@ -389,6 +566,21 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
     if (!error && data) return data as Order;
   } catch {}
   return memoryOrders.find(o => o.id === orderId) || null;
+}
+
+/** Look up an order by its Razorpay order ID — used in the payment.captured webhook. */
+export async function getOrderByRazorpayOrderId(razorpayOrderId: string): Promise<Order | null> {
+  try {
+    if (!isSupabaseConfigured()) return memoryOrders.find(o => o.razorpay_order_id === razorpayOrderId) || null;
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('orders')
+      .select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at')
+      .eq('razorpay_order_id', razorpayOrderId)
+      .single();
+    if (!error && data) return data as Order;
+  } catch {}
+  return memoryOrders.find(o => o.razorpay_order_id === razorpayOrderId) || null;
 }
 
 export async function getOrdersByUser(userId: string): Promise<Order[]> {

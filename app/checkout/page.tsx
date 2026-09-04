@@ -14,14 +14,18 @@ import {
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { cart, subtotal, coupon, discountAmount, isFreeShippingCoupon, clearCart, user } = useCart();
+  const { cart, subtotal, coupon, discountAmount, isFreeShippingCoupon, clearCart, user, cartLoaded } = useCart();
 
-  useEffect(() => { if (!user) router.push('/login?redirect=/checkout'); }, [user, router]);
+  useEffect(() => {
+    if (cartLoaded && !user) {
+      router.push('/login?redirect=/checkout');
+    }
+  }, [user, cartLoaded, router]);
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState('');
   const [isAddingNew, setIsAddingNew] = useState(false);
-  const [newAddr, setNewAddr] = useState<Partial<Address>>({ name: user?.name || '', phone: '', line1: '', city: '', state: '', pincode: '', is_default: true });
+  const [newAddr, setNewAddr] = useState<Partial<Address>>({ name: '', phone: '', line1: '', city: '', state: '', pincode: '', is_default: true });
   const [savingAddr, setSavingAddr] = useState(false);
 
   const [shippingFee, setShippingFee] = useState(subtotal >= STORE_CONFIG.freeShippingThreshold || isFreeShippingCoupon ? 0 : STORE_CONFIG.defaultShippingFee);
@@ -36,6 +40,13 @@ export default function CheckoutPage() {
   const totalWeight = cart.reduce((s, i) => s + (i.product.weight_grams || 300) * i.quantity, 0);
   const finalTotal = Math.max(0, subtotal - discountAmount) + shippingFee;
   const selectedAddress = addresses.find(a => a.id === selectedAddressId);
+
+  // Sync recipient name once user has hydrated
+  useEffect(() => {
+    if (user?.name) {
+      setNewAddr(prev => ({ ...prev, name: prev.name || user.name }));
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -80,12 +91,13 @@ export default function CheckoutPage() {
   const handlePay = async () => {
     setPayError(''); setStockError('');
     if (!selectedAddress) { setPayError('Please select or add a delivery address.'); return; }
-    setPayLoading(true);
+      setPayLoading(true);
     try {
-      // Pre-flight stock check
+      // Pre-flight stock check (product.stock = variant stock for Frame items)
       for (const item of cart) {
         if (item.product.stock < item.quantity) {
-          setStockError(`"${item.product.name}" only has ${item.product.stock} unit(s) left. Please update your cart.`);
+          const label = item.size ? `"${item.product.name}" (${item.size})` : `"${item.product.name}"`;
+          setStockError(`${label} only has ${item.product.stock} unit(s) left. Please update your cart.`);
           setPayLoading(false);
           return;
         }
@@ -101,6 +113,9 @@ export default function CheckoutPage() {
       const cartItems = cart.map(i => ({
         product_id: i.product.id, name: i.product.name,
         price: i.product.price, quantity: i.quantity, image: i.product.images?.[0] || '',
+        // Variant fields for Frame products
+        variant_id: i.variantId,
+        size: i.size,
       }));
 
       const verifyPayment = async (rpOrderId: string, rpPaymentId: string, rpSig: string) => {
@@ -148,12 +163,35 @@ export default function CheckoutPage() {
     }
   };
 
-  if (cart.length === 0) return (
-    <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4">
-      <h2 className="text-xl font-serif font-bold">No Items to Checkout</h2>
-      <Link href="/shop" className="inline-block px-6 py-2.5 bg-zinc-900 text-white font-bold text-xs rounded-lg uppercase">Return to Shop</Link>
-    </div>
-  );
+  if (!cartLoaded) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4 flex flex-col items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-800" />
+        <p className="text-xs text-zinc-500 font-medium">Verifying checkout session...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4 flex flex-col items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-800" />
+        <p className="text-xs text-zinc-500 font-medium">Redirecting to login...</p>
+      </div>
+    );
+  }
+
+  if (cart.length === 0) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4">
+        <h2 className="text-xl font-serif font-bold text-zinc-900">No Items to Checkout</h2>
+        <p className="text-xs text-zinc-500">Your shopping cart is currently empty.</p>
+        <Link href="/shop" className="inline-block px-6 py-2.5 bg-zinc-900 text-white font-bold text-xs rounded-lg uppercase tracking-wider hover:bg-amber-800 transition-colors">
+          Return to Shop
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
@@ -286,14 +324,15 @@ export default function CheckoutPage() {
           <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-5 sticky top-24">
             <h3 className="font-serif font-bold text-lg text-zinc-900 border-b border-zinc-100 pb-4">Order Summary</h3>
             <div className="max-h-52 overflow-y-auto space-y-3 pr-1">
-              {cart.map(({ product, quantity }) => (
-                <div key={product.id} className="flex justify-between items-center text-xs">
+              {cart.map(({ product, quantity, size }) => (
+                <div key={`${product.id}__${size || ''}`} className="flex justify-between items-center text-xs">
                   <div className="flex items-center gap-2">
                     <div className="w-9 h-11 bg-amber-50 rounded border flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-amber-900">
                       {product.images?.[0] ? <img src={product.images[0]} alt="" className="w-full h-full object-cover" /> : product.name.slice(0, 4)}
                     </div>
                     <div>
                       <p className="font-semibold text-zinc-900 line-clamp-1 max-w-[140px]">{product.name}</p>
+                      {size && <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Size: {size}</p>}
                       <p className="text-zinc-400">×{quantity}</p>
                     </div>
                   </div>

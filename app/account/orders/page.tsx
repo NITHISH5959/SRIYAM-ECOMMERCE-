@@ -75,7 +75,14 @@ function OrderCard({ order }: { order: Order }) {
                     {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" /> : item.name.slice(0, 4)}
                   </div>
                   <div>
-                    <p className="font-semibold text-zinc-900">{item.name}</p>
+                    <p className="font-semibold text-zinc-900">
+                      {item.name}
+                      {item.size && (
+                        <span className="ml-1.5 text-[10px] font-bold bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded border border-zinc-200 uppercase">
+                          {item.size}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-zinc-400">Qty: {item.quantity} &times; {STORE_CONFIG.defaultPricing.currency}{item.price}</p>
                   </div>
                 </div>

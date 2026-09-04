@@ -78,7 +78,15 @@ function OrderRow({ order, onStatusChange, onRefund }: {
           <div className="divide-y divide-zinc-100">
             {order.items.map((item, idx) => (
               <div key={idx} className="py-2.5 flex justify-between items-center text-xs">
-                <span className="font-semibold text-zinc-900">{item.name} <span className="font-normal text-zinc-500">×{item.quantity}</span></span>
+                <span className="font-semibold text-zinc-900">
+                  {item.name}
+                  {item.size && (
+                    <span className="ml-1.5 text-[10px] font-bold bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded border border-zinc-200 uppercase">
+                      {item.size}
+                    </span>
+                  )}
+                  {' '}<span className="font-normal text-zinc-500">×{item.quantity}</span>
+                </span>
                 <span className="font-bold text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{(item.price * item.quantity).toLocaleString()}</span>
               </div>
             ))}

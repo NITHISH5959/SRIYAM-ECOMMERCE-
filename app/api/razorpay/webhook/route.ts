@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { updateOrderStatus } from '@/lib/data';
+import { updateOrderStatus, getOrderByRazorpayOrderId } from '@/lib/data';
 
 /**
  * Razorpay Webhook Endpoint
@@ -68,13 +68,16 @@ export async function POST(request: Request) {
   try {
     switch (event) {
       case 'payment.captured': {
-        // Payment was successful — ensure order is marked as paid
+        // Payment was successful — mark order as paid in the database
         const razorpayOrderId = paymentEntity?.order_id;
         if (razorpayOrderId) {
-          // Note: updateOrderStatus takes our internal orderId, not razorpay order id.
-          // In a full implementation, look up by razorpay_order_id in your orders table.
-          // For now, we log it — a DB lookup by razorpay_order_id should be added when live.
-          console.info(`[Webhook] payment.captured for Razorpay order: ${razorpayOrderId}`);
+          const order = await getOrderByRazorpayOrderId(razorpayOrderId);
+          if (order) {
+            await updateOrderStatus(order.id, 'paid');
+            console.info(`[Webhook] payment.captured — Order ${order.id} marked as paid (Razorpay: ${razorpayOrderId})`);
+          } else {
+            console.warn(`[Webhook] payment.captured — No order found for Razorpay order ID: ${razorpayOrderId}`);
+          }
         }
         break;
       }

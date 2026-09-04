@@ -43,3 +43,82 @@ values
   ('FLAT50', 'flat', 50, 500, 50, true),
   ('FREESHIP', 'free_shipping', 0, 999, 200, true)
 on conflict (code) do nothing;
+
+-- =============================================
+-- Seed Frame Product Variants (A3 + A4)
+-- Placeholder prices — update in admin panel.
+-- ON CONFLICT DO NOTHING = safe to re-run.
+-- =============================================
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A3', 599, 649, 10, true from products where slug = '3-rajas'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A4', 799, 899, 10, true from products where slug = '3-rajas'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A3', 599, 649, 10, true from products where slug = 'natarajar-with-naalvar'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A4', 799, 899, 10, true from products where slug = 'natarajar-with-naalvar'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A3', 599, 649, 10, true from products where slug = 'uthiraapathiyaar'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A4', 799, 899, 10, true from products where slug = 'uthiraapathiyaar'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A3', 599, 649, 10, true from products where slug = 'thiruvaarur-thiyagarajar'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A4', 799, 899, 10, true from products where slug = 'thiruvaarur-thiyagarajar'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A3', 599, 649, 10, true from products where slug = 'panja-sabai'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A4', 799, 899, 10, true from products where slug = 'panja-sabai'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A3', 599, 649, 10, true from products where slug = 'aaru-padai-veedu'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A4', 799, 899, 10, true from products where slug = 'aaru-padai-veedu'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A3', 599, 649, 10, true from products where slug = 'pancha-bootham'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A4', 799, 899, 10, true from products where slug = 'pancha-bootham'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A3', 599, 649, 10, true from products where slug = 'pancha-bootham-map'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A4', 799, 899, 10, true from products where slug = 'pancha-bootham-map'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A3', 599, 649, 10, true from products where slug = '3-sakthi'
+on conflict (product_id, size) do nothing;
+
+insert into product_variants (product_id, size, price, compare_at_price, stock, is_active)
+select id, 'A4', 799, 899, 10, true from products where slug = '3-sakthi'
+on conflict (product_id, size) do nothing;
+

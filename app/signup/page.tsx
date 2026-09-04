@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
-import { createClient } from '@/lib/supabase/client';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { Mail, Lock, User, Phone, ArrowRight } from 'lucide-react';
 
 function SignupContent() {
@@ -20,14 +20,27 @@ function SignupContent() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrorMessage('');
 
     try {
+      // Demo mode: Supabase not configured — allow signup without a real account
+      if (!isSupabaseConfigured()) {
+        setUser({
+          id: `usr_${Date.now()}`,
+          email: email,
+          name: fullName || email.split('@')[0],
+        });
+        router.push(redirectUrl);
+        return;
+      }
+
       const supabase = createClient();
-      const { data } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -38,6 +51,11 @@ function SignupContent() {
         },
       });
 
+      if (error) {
+        setErrorMessage(error.message || 'Failed to create account. Please try again.');
+        return;
+      }
+
       const newUser = {
         id: data?.user?.id || `usr_${Date.now()}`,
         email: email,
@@ -45,13 +63,8 @@ function SignupContent() {
       };
       setUser(newUser);
       router.push(redirectUrl);
-    } catch (err) {
-      setUser({
-        id: `usr_${Date.now()}`,
-        email: email,
-        name: fullName || email.split('@')[0],
-      });
-      router.push(redirectUrl);
+    } catch (err: any) {
+      setErrorMessage('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -77,6 +90,12 @@ function SignupContent() {
           Join {STORE_CONFIG.name} for seamless checkout and order tracking.
         </p>
       </div>
+
+      {errorMessage && (
+        <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
+          {errorMessage}
+        </div>
+      )}
 
       <form onSubmit={handleSignup} className="space-y-4">
         <div className="space-y-1">

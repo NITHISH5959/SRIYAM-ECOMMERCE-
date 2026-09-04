@@ -8,6 +8,7 @@ import { STORE_CONFIG } from '@/lib/config';
 import { getProducts } from '@/lib/data';
 import { Product } from '@/types';
 import PlaceholderImage from '@/components/ui/PlaceholderImage';
+import ProductCard from '@/components/products/ProductCard';
 import {
   ShoppingBag,
   Plus,
@@ -19,6 +20,7 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
+  Loader2,
 } from 'lucide-react';
 
 export default function CartPage() {
@@ -38,6 +40,7 @@ export default function CartPage() {
     applyCoupon,
     removeCoupon,
     user,
+    cartLoaded,
   } = useCart();
 
   const [inputCode, setInputCode] = useState(couponCode || '');
@@ -72,6 +75,15 @@ export default function CartPage() {
       router.push('/checkout');
     }
   };
+
+  if (!cartLoaded) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 flex flex-col items-center justify-center min-h-[50vh] gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-800" />
+        <p className="text-xs text-zinc-500 font-medium">Loading your cart...</p>
+      </div>
+    );
+  }
 
   if (cart.length === 0) {
     return (
@@ -116,12 +128,13 @@ export default function CartPage() {
         {/* Left: Cart Line Items */}
         <div className="lg:col-span-8 space-y-6">
           <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden divide-y divide-zinc-100">
-            {cart.map(({ product, quantity }) => {
+            {cart.map(({ product, quantity, size, variantId }) => {
               const maxStock = product.stock > 0 ? Math.min(5, product.stock) : 0;
               const hasImages = product.images && product.images.length > 0 && product.images[0].trim() !== '';
+              const cartKey = `${product.id}__${size || ''}`;
 
               return (
-                <div key={product.id} className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 hover:bg-zinc-50/50 transition-colors">
+                <div key={cartKey} className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 hover:bg-zinc-50/50 transition-colors">
                   {/* Image & Title */}
                   <div className="flex items-center gap-4 flex-1">
                     <div className="w-20 h-24 bg-zinc-100 rounded-lg overflow-hidden flex-shrink-0 border border-zinc-200 flex items-center justify-center">
@@ -138,6 +151,12 @@ export default function CartPage() {
                       <Link href={`/product/${product.slug}`} className="block font-semibold text-sm text-zinc-900 hover:text-amber-800 transition-colors">
                         {product.name}
                       </Link>
+                      {/* Size badge for Frame items */}
+                      {size && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200">
+                          Size: {size}
+                        </span>
+                      )}
                       <p className="text-xs font-bold text-zinc-900">
                         {STORE_CONFIG.defaultPricing.currency}{product.price.toLocaleString()}
                         {product.compare_at_price > product.price && (
@@ -153,14 +172,14 @@ export default function CartPage() {
                   <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
                     <div className="flex items-center border border-zinc-300 rounded-lg bg-zinc-50">
                       <button
-                        onClick={() => updateQuantity(product.id, quantity - 1)}
+                        onClick={() => updateQuantity(product.id, quantity - 1, size)}
                         className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-l-lg"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
                       <span className="px-3 text-xs font-bold text-zinc-900">{quantity}</span>
                       <button
-                        onClick={() => updateQuantity(product.id, quantity + 1)}
+                        onClick={() => updateQuantity(product.id, quantity + 1, size)}
                         disabled={quantity >= maxStock}
                         className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-r-lg disabled:opacity-40"
                       >
@@ -177,7 +196,7 @@ export default function CartPage() {
 
                     {/* Remove */}
                     <button
-                      onClick={() => removeFromCart(product.id)}
+                      onClick={() => removeFromCart(product.id, size)}
                       className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       title="Remove item"
                     >
@@ -336,31 +355,9 @@ export default function CartPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-            {recommendedProducts.map((p) => {
-              const hasImages = p.images && p.images.length > 0 && p.images[0].trim() !== '';
-              return (
-                <div key={p.id} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm p-3 flex flex-col justify-between">
-                  <Link href={`/product/${p.slug}`} className="block aspect-square bg-zinc-50 rounded-lg overflow-hidden mb-3">
-                    {hasImages ? (
-                      <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <PlaceholderImage title={p.name} category={p.category?.name || ''} className="h-full" />
-                    )}
-                  </Link>
-                  <div className="space-y-2">
-                    <Link href={`/product/${p.slug}`} className="block font-semibold text-xs text-zinc-900 hover:text-amber-800 line-clamp-1">
-                      {p.name}
-                    </Link>
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-xs text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{p.price}</span>
-                      <Link href={`/product/${p.slug}`} className="text-[11px] font-bold text-amber-800 hover:underline">
-                        View Item
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {recommendedProducts.map((p) => (
+              <ProductCard key={p.id} product={p} />
+            ))}
           </div>
         </div>
       )}

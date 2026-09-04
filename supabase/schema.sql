@@ -198,3 +198,52 @@ returns void as $$
   set used_count = used_count + 1
   where upper(code) = upper(coupon_code);
 $$ language sql security definer;
+
+-- =============================================
+-- 7. PRODUCT VARIANTS TABLE (Frames A3 / A4)
+-- =============================================
+
+create table if not exists product_variants (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid references products(id) on delete cascade not null,
+  size text not null,                  -- 'A3' | 'A4'
+  price numeric not null,
+  compare_at_price numeric,
+  stock integer default 0,
+  is_active boolean default true,
+  created_at timestamp with time zone default now(),
+  unique(product_id, size)
+);
+
+alter table product_variants enable row level security;
+
+-- Public can read active variants for active products; admin sees all
+create policy "Variants public read active" on product_variants
+  for select using (
+    (is_active = true
+      and exists (
+        select 1 from products p where p.id = product_id and p.is_active = true
+      )
+    ) or public.is_admin()
+  );
+
+create policy "Variants admin insert" on product_variants
+  for insert with check (public.is_admin());
+
+create policy "Variants admin update" on product_variants
+  for update using (public.is_admin());
+
+create policy "Variants admin delete" on product_variants
+  for delete using (public.is_admin());
+
+-- Index for fast per-product variant lookup
+create index if not exists idx_variants_product_id on product_variants(product_id);
+
+-- Atomically decrements stock for a specific variant, clamping at 0.
+-- Called from verify-payment for Frame orders after payment is confirmed.
+create or replace function public.decrement_variant_stock(p_variant_id uuid, qty integer)
+returns void as $$
+  update product_variants
+  set stock = greatest(0, stock - qty)
+  where id = p_variant_id;
+$$ language sql security definer;

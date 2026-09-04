@@ -4,6 +4,18 @@ export interface Category {
   slug: string;
 }
 
+// ── Size variant (Frames only) ─────────────────────────────────────────────────
+export interface ProductVariant {
+  id: string;
+  product_id: string;
+  size: string;           // 'A3' | 'A4'
+  price: number;
+  compare_at_price: number;
+  stock: number;
+  is_active: boolean;
+  created_at?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -18,6 +30,8 @@ export interface Product {
   is_active: boolean;
   created_at?: string;
   category?: Category;
+  // Attached on product-detail fetch for Frame products
+  variants?: ProductVariant[];
 }
 
 export interface Coupon {
@@ -59,6 +73,9 @@ export interface OrderItem {
   price: number;
   quantity: number;
   image?: string;
+  // Variant fields (Frames only)
+  variant_id?: string;
+  size?: string;
 }
 
 export interface Order {
@@ -80,4 +97,7 @@ export interface Order {
 export interface CartItem {
   product: Product;
   quantity: number;
+  // Variant fields (Frames only)
+  size?: string;
+  variantId?: string;
 }
