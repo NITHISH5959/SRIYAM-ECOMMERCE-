@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { Mail, Lock, User, Phone, ArrowRight } from 'lucide-react';
 
 function SignupContent() {
@@ -27,18 +27,13 @@ function SignupContent() {
     setIsLoading(true);
     setErrorMessage('');
 
-    try {
-      // Demo mode: Supabase not configured — allow signup without a real account
-      if (!isSupabaseConfigured()) {
-        setUser({
-          id: `usr_${Date.now()}`,
-          email: email,
-          name: fullName || email.split('@')[0],
-        });
-        router.push(redirectUrl);
-        return;
-      }
+    if (password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters.');
+      setIsLoading(false);
+      return;
+    }
 
+    try {
       const supabase = createClient();
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -52,14 +47,39 @@ function SignupContent() {
       });
 
       if (error) {
-        setErrorMessage(error.message || 'Failed to create account. Please try again.');
+        if (
+          error.message.toLowerCase().includes('already registered') ||
+          error.message.toLowerCase().includes('already exists')
+        ) {
+          setErrorMessage('An account with this email address already exists. Please sign in instead.');
+        } else {
+          setErrorMessage(error.message || 'Failed to create account. Please try again.');
+        }
         return;
       }
 
+      if (!data?.user) {
+        setErrorMessage('Account creation failed. Please try again.');
+        return;
+      }
+
+      // Explicitly upsert profile row to guarantee profile existence
+      try {
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          full_name: fullName,
+          phone: phone,
+          is_admin: false,
+        });
+      } catch {
+        // Trigger or fallback handles if client upsert is constrained
+      }
+
       const newUser = {
-        id: data?.user?.id || `usr_${Date.now()}`,
+        id: data.user.id,
         email: email,
         name: fullName || email.split('@')[0],
+        isAdmin: false,
       };
       setUser(newUser);
       router.push(redirectUrl);

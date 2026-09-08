@@ -9,8 +9,6 @@ const PLACEHOLDERS = [
   'placeholder',
   'your-supabase-project-id',
   'rzp_test_placeholder',
-  'shiprocket_password_placeholder',
-  'shipping@sriyamstore.com',
 ];
 
 function isPlaceholder(value: string): boolean {
@@ -29,8 +27,6 @@ const REQUIRED_SERVER_VARS: EnvVar[] = [
   { key: 'RAZORPAY_KEY_ID' },
   { key: 'RAZORPAY_KEY_SECRET' },
   { key: 'RAZORPAY_WEBHOOK_SECRET', optional: true },
-  { key: 'SHIPROCKET_EMAIL', optional: true },
-  { key: 'SHIPROCKET_PASSWORD', optional: true },
 ];
 
 let validated = false;

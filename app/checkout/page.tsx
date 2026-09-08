@@ -28,16 +28,12 @@ export default function CheckoutPage() {
   const [newAddr, setNewAddr] = useState<Partial<Address>>({ name: '', phone: '', line1: '', city: '', state: '', pincode: '', is_default: true });
   const [savingAddr, setSavingAddr] = useState(false);
 
-  const [shippingFee, setShippingFee] = useState(subtotal >= STORE_CONFIG.freeShippingThreshold || isFreeShippingCoupon ? 0 : STORE_CONFIG.defaultShippingFee);
-  const [courierName, setCourierName] = useState('Shiprocket Express');
-  const [estDays, setEstDays] = useState(3);
-  const [calcShipping, setCalcShipping] = useState(false);
+  const shippingFee = (subtotal >= STORE_CONFIG.freeShippingThreshold || isFreeShippingCoupon) ? 0 : STORE_CONFIG.defaultShippingFee;
 
   const [payLoading, setPayLoading] = useState(false);
   const [payError, setPayError] = useState('');
   const [stockError, setStockError] = useState('');
 
-  const totalWeight = cart.reduce((s, i) => s + (i.product.weight_grams || 300) * i.quantity, 0);
   const finalTotal = Math.max(0, subtotal - discountAmount) + shippingFee;
   const selectedAddress = addresses.find(a => a.id === selectedAddressId);
 
@@ -55,25 +51,11 @@ export default function CheckoutPage() {
       if (addrs.length > 0) {
         const def = addrs.find(a => a.is_default) || addrs[0];
         setSelectedAddressId(def.id);
-        calcShippingFee(def.pincode);
       } else {
         setIsAddingNew(true);
       }
     });
   }, [user]);
-
-  const calcShippingFee = async (pincode: string) => {
-    if (subtotal >= STORE_CONFIG.freeShippingThreshold || isFreeShippingCoupon) { setShippingFee(0); return; }
-    setCalcShipping(true);
-    try {
-      const res = await fetch('/api/shipping/calculate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ weightGrams: totalWeight, pincode }),
-      });
-      const data = await res.json();
-      if (data.success) { setShippingFee(data.shippingFee); setCourierName(data.courierName); setEstDays(data.estimatedDays); }
-    } catch { /* keep default */ } finally { setCalcShipping(false); }
-  };
 
   const handleSaveAddr = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,16 +66,15 @@ export default function CheckoutPage() {
       setAddresses(prev => [...prev, saved]);
       setSelectedAddressId(saved.id);
       setIsAddingNew(false);
-      calcShippingFee(saved.pincode || '');
     } finally { setSavingAddr(false); }
   };
 
   const handlePay = async () => {
     setPayError(''); setStockError('');
     if (!selectedAddress) { setPayError('Please select or add a delivery address.'); return; }
-      setPayLoading(true);
+    setPayLoading(true);
     try {
-      // Pre-flight stock check (product.stock = variant stock for Frame items)
+      // Pre-flight client-side stock check (UX convenience only — server re-checks)
       for (const item of cart) {
         if (item.product.stock < item.quantity) {
           const label = item.size ? `"${item.product.name}" (${item.size})` : `"${item.product.name}"`;
@@ -103,90 +84,130 @@ export default function CheckoutPage() {
         }
       }
 
-      const orderRes = await fetch('/api/razorpay/create-order', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: finalTotal, receipt: `rcpt_${Date.now()}` }),
-      });
-      const orderData = await orderRes.json();
-      if (!orderData.success) { setPayError('Failed to create payment: ' + orderData.message); setPayLoading(false); return; }
-
+      // Build cart items — IDs and quantities only; server fetches live prices
       const cartItems = cart.map(i => ({
-        product_id: i.product.id, name: i.product.name,
-        price: i.product.price, quantity: i.quantity, image: i.product.images?.[0] || '',
-        // Variant fields for Frame products
+        product_id: i.product.id,
+        name: i.product.name,
+        quantity: i.quantity,
+        image: i.product.images?.[0] || '',
         variant_id: i.variantId,
         size: i.size,
       }));
 
+      // Step 1: Create Razorpay order — server recalculates total from live DB prices
+      const orderRes = await fetch('/api/razorpay/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: cartItems,
+          coupon_code: coupon?.code || '',
+          shipping_fee: shippingFee,
+          user_id: user?.id || '',
+          shipping_address: selectedAddress,
+        }),
+      });
+      const orderData = await orderRes.json();
+      if (!orderData.success) {
+        setPayError('Failed to create payment: ' + orderData.message);
+        setPayLoading(false);
+        return;
+      }
+
+      // Use server-authorised total (not client-calculated finalTotal)
+      const serverTotal = orderData.calculatedTotal ?? finalTotal;
+
+      // Step 2: After payment completes, verify signature server-side and create order
       const verifyPayment = async (rpOrderId: string, rpPaymentId: string, rpSig: string) => {
         const vRes = await fetch('/api/razorpay/verify-payment', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            razorpay_order_id: rpOrderId, razorpay_payment_id: rpPaymentId, razorpay_signature: rpSig,
-            orderData: { user_id: user?.id || 'demo_user_id', items: cartItems, subtotal, discount_amount: discountAmount, coupon_code: coupon?.code || '', shipping_fee: shippingFee, total: finalTotal, shipping_address: selectedAddress },
+            razorpay_order_id: rpOrderId,
+            razorpay_payment_id: rpPaymentId,
+            razorpay_signature: rpSig,
+            orderData: {
+              user_id: user?.id || '',
+              items: cartItems,
+              subtotal,
+              discount_amount: discountAmount,
+              coupon_code: coupon?.code || '',
+              shipping_fee: shippingFee,
+              total: serverTotal,
+              shipping_address: selectedAddress,
+            },
           }),
         });
         const vData = await vRes.json();
-        if (vData.success) { clearCart(); router.push(`/order-success/${vData.orderId}`); }
-        else { setPayError(vData.message || 'Payment verification failed. Please contact support.'); }
+        if (vData.success) {
+          clearCart();
+          router.push(`/order-success/${vData.orderId}`);
+        } else {
+          setPayError(vData.message || 'Payment verification failed. Please contact support.');
+          setPayLoading(false);
+        }
       };
 
-      // Load Razorpay script
-      if (!(window as any).Razorpay) {
-        await new Promise(resolve => {
-          const s = document.createElement('script');
-          s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          s.onload = () => resolve(true); s.onerror = () => resolve(false);
-          document.body.appendChild(s);
-        });
-      }
+      // Open Razorpay Checkout modal
+      const options = {
+        key: orderData.key,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: STORE_CONFIG.name,
+        description: 'Payment for Sriyam Store Order',
+        image: '/logo.png',
+        order_id: orderData.id,
+        prefill: {
+          name: selectedAddress.name || user?.name,
+          email: user?.email,
+          contact: selectedAddress.phone,
+        },
+        theme: { color: '#92400e' },
+        handler: function (response: any) {
+          verifyPayment(
+            response.razorpay_order_id,
+            response.razorpay_payment_id,
+            response.razorpay_signature
+          );
+        },
+        modal: {
+          ondismiss: function () {
+            setPayLoading(false);
+          },
+        },
+      };
 
-      if ((window as any).Razorpay) {
-        const rzp = new (window as any).Razorpay({
-          key: orderData.key, amount: orderData.amount, currency: 'INR',
-          name: STORE_CONFIG.name, description: 'Sriyam Store — Sacred Art Order',
-          order_id: orderData.id,
-          prefill: { name: selectedAddress.name, email: user?.email || '', contact: selectedAddress.phone },
-          theme: { color: '#b45309' },
-          handler: (response: any) => verifyPayment(response.razorpay_order_id || orderData.id, response.razorpay_payment_id, response.razorpay_signature),
-          modal: { ondismiss: () => setPayLoading(false) },
+      if (typeof window !== 'undefined' && (window as any).Razorpay) {
+        const rzp = new (window as any).Razorpay(options);
+        rzp.on('payment.failed', function (resp: any) {
+          setPayError(resp.error?.description || 'Payment failed. Please try again.');
+          setPayLoading(false);
         });
         rzp.open();
       } else {
-        // Offline / test mode fallback
-        await verifyPayment(orderData.id, `pay_mock_${Date.now()}`, 'test_signature');
+        setPayError('Razorpay SDK failed to load. Please check your connection.');
+        setPayLoading(false);
       }
     } catch (e: any) {
-      setPayError('An unexpected error occurred. Please try again.');
-    } finally {
+      setPayError(e.message || 'An error occurred while setting up payment.');
       setPayLoading(false);
     }
   };
 
   if (!cartLoaded) {
     return (
-      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4 flex flex-col items-center justify-center min-h-[50vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-800" />
-        <p className="text-xs text-zinc-500 font-medium">Verifying checkout session...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4 flex flex-col items-center justify-center min-h-[50vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-800" />
-        <p className="text-xs text-zinc-500 font-medium">Redirecting to login...</p>
+      <div className="max-w-4xl mx-auto px-4 py-20 text-center text-xs text-zinc-500 flex items-center justify-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin text-amber-800" />
+        <span>Loading checkout...</span>
       </div>
     );
   }
 
   if (cart.length === 0) {
     return (
-      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4">
-        <h2 className="text-xl font-serif font-bold text-zinc-900">No Items to Checkout</h2>
-        <p className="text-xs text-zinc-500">Your shopping cart is currently empty.</p>
-        <Link href="/shop" className="inline-block px-6 py-2.5 bg-zinc-900 text-white font-bold text-xs rounded-lg uppercase tracking-wider hover:bg-amber-800 transition-colors">
+      <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4">
+        <h1 className="text-2xl font-serif font-bold text-zinc-900">Your Cart is Empty</h1>
+        <p className="text-xs text-zinc-500">Add products to your cart before proceeding to checkout.</p>
+        <Link href="/shop" className="inline-block px-6 py-3 bg-amber-800 text-white font-bold text-xs uppercase rounded-xl">
           Return to Shop
         </Link>
       </div>
@@ -194,103 +215,80 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
-      <div className="border-b border-zinc-200 pb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <div className="text-xs text-zinc-500 flex items-center gap-2 mb-1">
-            <Link href="/cart" className="hover:text-zinc-900">Cart</Link><span>/</span>
-            <span className="text-zinc-900 font-medium">Checkout</span>
-          </div>
-          <h1 className="text-3xl font-serif font-bold text-zinc-900">Secure Checkout</h1>
-        </div>
-        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200">
-          <Lock className="w-3.5 h-3.5" /><span>256-Bit SSL Encrypted</span>
-        </div>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-8">
+      <div>
+        <p className="text-xs text-zinc-500 mb-1">Checkout</p>
+        <h1 className="text-3xl font-serif font-bold text-zinc-900">Complete Your Order</h1>
       </div>
 
-      {/* Error banners */}
-      {stockError && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs font-medium text-red-800 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-600" />
-          <div><p className="font-bold">Stock Insufficient</p><p>{stockError}</p>
-            <Link href="/cart" className="font-bold underline mt-1 inline-block">Update Cart</Link>
-          </div>
-        </div>
-      )}
       {payError && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs font-medium text-red-800 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-600" />
-          <div><p className="font-bold">Payment Error</p><p>{payError}</p>
-            <button onClick={() => setPayError('')} className="font-bold underline mt-1">Dismiss</button>
-          </div>
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-800 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <span>{payError}</span>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+      {stockError && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-900 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0" />
+            <span>{stockError}</span>
+          </div>
+          <Link href="/cart" className="font-bold underline text-amber-900 ml-2 whitespace-nowrap">Edit Cart</Link>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left: Address + Shipping */}
         <div className="lg:col-span-7 space-y-6">
-
-          {/* Address */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-5">
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-4">
-              <div className="flex items-center gap-2">
+          {/* Address Selection */}
+          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-4">
+            <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
+              <h3 className="font-serif font-bold text-lg text-zinc-900 flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-amber-800" />
-                <h3 className="font-serif font-bold text-lg text-zinc-900">1. Delivery Address</h3>
-              </div>
+                1. Delivery Address
+              </h3>
               {!isAddingNew && (
                 <button onClick={() => setIsAddingNew(true)} className="text-xs font-bold text-amber-800 hover:underline flex items-center gap-1">
-                  <Plus className="w-3.5 h-3.5" /><span>New Address</span>
+                  <Plus className="w-3.5 h-3.5" />Add New
                 </button>
               )}
             </div>
 
-            {isAddingNew ? (
-              <form onSubmit={handleSaveAddr} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {[['Recipient Name *', 'name', 'text', 'e.g. Sriram'], ['Phone *', 'phone', 'tel', '+91 98765 43210']].map(([label, field, type, ph]) => (
-                    <div key={field} className="space-y-1">
-                      <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">{label}</label>
-                      <input type={type} required value={(newAddr as any)[field] || ''} onChange={e => setNewAddr({ ...newAddr, [field]: e.target.value })}
-                        placeholder={ph} className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
-                    </div>
-                  ))}
+            {/* Address List */}
+            {!isAddingNew && addresses.map(addr => (
+              <label key={addr.id} className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${selectedAddressId === addr.id ? 'border-amber-700 bg-amber-50/40 ring-1 ring-amber-700' : 'border-zinc-200 hover:border-zinc-300'}`}>
+                <input type="radio" name="address" checked={selectedAddressId === addr.id}
+                  onChange={() => setSelectedAddressId(addr.id)}
+                  className="mt-0.5 text-amber-800 focus:ring-amber-700" />
+                <div className="text-xs space-y-0.5 flex-1">
+                  <p className="font-bold text-zinc-900">{addr.name} <span className="font-normal text-zinc-500">({addr.phone})</span></p>
+                  <p className="text-zinc-600">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.state} – <span className="font-mono font-bold">{addr.pincode}</span></p>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Address Line 1 *</label>
-                  <input type="text" required value={newAddr.line1 || ''} onChange={e => setNewAddr({ ...newAddr, line1: e.target.value })}
-                    placeholder="House/Flat No., Street, Area" className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+              </label>
+            ))}
+
+            {/* Add New Address Form */}
+            {isAddingNew && (
+              <form onSubmit={handleSaveAddr} className="space-y-3 pt-2">
+                <p className="text-xs font-bold text-zinc-800">Enter Delivery Address</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="text" required placeholder="Full Name *" value={newAddr.name || ''} onChange={e => setNewAddr({ ...newAddr, name: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+                  <input type="tel" required placeholder="Phone Number *" value={newAddr.phone || ''} onChange={e => setNewAddr({ ...newAddr, phone: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
                 </div>
+                <input type="text" required placeholder="Address Line 1 *" value={newAddr.line1 || ''} onChange={e => setNewAddr({ ...newAddr, line1: e.target.value })} className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
                 <div className="grid grid-cols-3 gap-3">
-                  {[['City *', 'city', 'Chennai'], ['State *', 'state', 'Tamil Nadu'], ['Pincode *', 'pincode', '600001']].map(([label, field, ph]) => (
-                    <div key={field} className="space-y-1">
-                      <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">{label}</label>
-                      <input type="text" required value={(newAddr as any)[field] || ''} placeholder={ph}
-                        onChange={e => { setNewAddr({ ...newAddr, [field]: e.target.value }); if (field === 'pincode' && e.target.value.length === 6) calcShippingFee(e.target.value); }}
-                        className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:ring-amber-700 focus:outline-none" />
-                    </div>
-                  ))}
+                  <input type="text" required placeholder="City *" value={newAddr.city || ''} onChange={e => setNewAddr({ ...newAddr, city: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+                  <input type="text" required placeholder="State *" value={newAddr.state || ''} onChange={e => setNewAddr({ ...newAddr, state: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+                  <input type="text" required pattern="\d{6}" maxLength={6} placeholder="Pincode *" value={newAddr.pincode || ''} onChange={e => setNewAddr({ ...newAddr, pincode: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:ring-amber-700 focus:outline-none" />
                 </div>
-                <div className="flex justify-end gap-3 pt-2">
-                  {addresses.length > 0 && <button type="button" onClick={() => setIsAddingNew(false)} className="px-4 py-2 border border-zinc-300 text-xs font-semibold rounded-lg">Cancel</button>}
-                  <button type="submit" disabled={savingAddr} className="px-5 py-2.5 bg-amber-800 text-white font-bold text-xs uppercase rounded-lg flex items-center gap-1.5">
-                    {savingAddr ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                    {savingAddr ? 'Saving...' : 'Save & Deliver Here'}
+                <div className="flex gap-2 justify-end pt-2">
+                  {addresses.length > 0 && <button type="button" onClick={() => setIsAddingNew(false)} className="px-4 py-2 border text-xs font-semibold rounded-lg">Cancel</button>}
+                  <button type="submit" disabled={savingAddr} className="px-5 py-2 bg-amber-800 text-white font-bold text-xs uppercase rounded-lg">
+                    {savingAddr ? 'Saving...' : 'Save & Select'}
                   </button>
                 </div>
               </form>
-            ) : (
-              <div className="space-y-3">
-                {addresses.map(addr => (
-                  <label key={addr.id} className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedAddressId === addr.id ? 'border-amber-700 bg-amber-50/40' : 'border-zinc-200 hover:border-zinc-300'}`}>
-                    <input type="radio" name="addr" checked={selectedAddressId === addr.id} onChange={() => { setSelectedAddressId(addr.id); calcShippingFee(addr.pincode); }} className="mt-1 text-amber-800" />
-                    <div className="text-xs space-y-0.5">
-                      <p className="font-bold text-zinc-900">{addr.name} <span className="font-normal text-zinc-500">({addr.phone})</span></p>
-                      <p className="text-zinc-600">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.state} – <span className="font-mono font-bold text-zinc-900">{addr.pincode}</span></p>
-                      {addr.is_default && <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Default</span>}
-                    </div>
-                  </label>
-                ))}
-              </div>
             )}
           </div>
 
@@ -302,14 +300,12 @@ export default function CheckoutPage() {
             </div>
             <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200 flex items-center justify-between text-xs">
               <div className="space-y-1">
-                <p className="font-bold text-zinc-900">{courierName}</p>
-                <p className="text-zinc-500">Package weight: <span className="font-semibold text-zinc-800">{totalWeight}g</span></p>
-                <p className="text-amber-800 font-medium text-[11px]">Est. delivery: {estDays} business days</p>
+                <p className="font-bold text-zinc-900">Express Courier Delivery</p>
+                <p className="text-zinc-500">Flat rate delivery to any location in India</p>
+                <p className="text-amber-800 font-medium text-[11px]">Est. delivery: 2 – 4 business days</p>
               </div>
               <div className="text-right">
-                {calcShipping ? (
-                  <span className="flex items-center gap-1 text-zinc-400 text-xs animate-pulse"><Loader2 className="w-3 h-3 animate-spin" />Calculating...</span>
-                ) : shippingFee === 0 ? (
+                {shippingFee === 0 ? (
                   <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded uppercase">Free</span>
                 ) : (
                   <span className="text-base font-extrabold text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{shippingFee}</span>
@@ -346,7 +342,7 @@ export default function CheckoutPage() {
               {discountAmount > 0 && <div className="flex justify-between text-emerald-700 font-semibold"><span>Discount ({coupon?.code})</span><span>-{STORE_CONFIG.defaultPricing.currency}{discountAmount}</span></div>}
               <div className="flex justify-between text-zinc-500">
                 <span>Shipping</span>
-                <span className="font-medium text-zinc-900">{calcShipping ? '...' : shippingFee === 0 ? <span className="text-emerald-600 font-bold">Free</span> : `${STORE_CONFIG.defaultPricing.currency}${shippingFee}`}</span>
+                <span className="font-medium text-zinc-900">{shippingFee === 0 ? <span className="text-emerald-600 font-bold">Free</span> : `${STORE_CONFIG.defaultPricing.currency}${shippingFee}`}</span>
               </div>
               <div className="pt-2.5 border-t border-zinc-200 flex justify-between font-extrabold text-zinc-900 text-sm">
                 <span>Total</span>

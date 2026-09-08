@@ -1,65 +1,76 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { updateOrderStatus, getOrderByRazorpayOrderId } from '@/lib/data';
+import {
+  updateOrderStatus,
+  getOrderByRazorpayOrderId,
+  createOrder,
+  deductStock,
+  deductVariantStock,
+  getVariantsByIds,
+  getProducts,
+  validateCouponCode,
+  incrementCouponUsageCount,
+} from '@/lib/data';
 
 /**
- * Razorpay Webhook Endpoint
+ * Razorpay Webhook Endpoint — POST /api/razorpay/webhook
  *
- * Validates the incoming webhook signature using RAZORPAY_WEBHOOK_SECRET.
- * Handles payment.captured events to mark orders as paid.
+ * Primary responsibility: backup confirmation for payment.captured events.
+ * This fires when the browser closes before verify-payment completes.
  *
- * Set up in Razorpay Dashboard → Settings → Webhooks:
+ * Security: HMAC-SHA256 signature verified against RAZORPAY_WEBHOOK_SECRET
+ * before any payload is trusted.
+ *
+ * Razorpay Dashboard setup:
  *   URL: https://yourdomain.com/api/razorpay/webhook
- *   Events: payment.captured, payment.failed
+ *   Events: payment.captured, payment.failed, refund.created
  *   Secret: value of RAZORPAY_WEBHOOK_SECRET env var
  */
 export async function POST(request: Request) {
   const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-  if (!webhookSecret) {
-    console.error('[Webhook] RAZORPAY_WEBHOOK_SECRET is not set. Rejecting all webhook requests.');
+  if (!webhookSecret || webhookSecret.includes('placeholder')) {
+    console.error('[Webhook] RAZORPAY_WEBHOOK_SECRET is not set or is a placeholder. Rejecting all requests.');
     return NextResponse.json(
-      { success: false, message: 'Webhook secret not configured' },
+      { success: false, message: 'Webhook not configured.' },
       { status: 500 }
     );
   }
 
-  // Read the raw body for signature verification
+  // ── Signature verification ─────────────────────────────────────────────
   const rawBody = await request.text();
   const receivedSignature = request.headers.get('x-razorpay-signature');
 
   if (!receivedSignature) {
-    return NextResponse.json(
-      { success: false, message: 'Missing webhook signature header' },
-      { status: 400 }
-    );
+    return NextResponse.json({ success: false, message: 'Missing webhook signature.' }, { status: 400 });
   }
 
-  // HMAC-SHA256 signature verification
   const expectedSignature = crypto
     .createHmac('sha256', webhookSecret)
     .update(rawBody)
     .digest('hex');
 
-  const isValid = crypto.timingSafeEqual(
-    Buffer.from(receivedSignature, 'hex'),
-    Buffer.from(expectedSignature, 'hex')
-  );
-
-  if (!isValid) {
-    console.warn('[Webhook] Invalid signature — possible spoofed request rejected.');
-    return NextResponse.json(
-      { success: false, message: 'Invalid webhook signature' },
-      { status: 400 }
+  let signatureValid = false;
+  try {
+    signatureValid = crypto.timingSafeEqual(
+      Buffer.from(receivedSignature, 'hex'),
+      Buffer.from(expectedSignature, 'hex')
     );
+  } catch {
+    signatureValid = false;
   }
 
-  // Parse the verified payload
+  if (!signatureValid) {
+    console.warn('[Webhook] Invalid signature — possible spoofed request rejected.');
+    return NextResponse.json({ success: false, message: 'Invalid webhook signature.' }, { status: 400 });
+  }
+
+  // ── Parse payload ──────────────────────────────────────────────────────
   let payload: any;
   try {
     payload = JSON.parse(rawBody);
   } catch {
-    return NextResponse.json({ success: false, message: 'Invalid JSON payload' }, { status: 400 });
+    return NextResponse.json({ success: false, message: 'Invalid JSON payload.' }, { status: 400 });
   }
 
   const event = payload?.event;
@@ -68,41 +79,215 @@ export async function POST(request: Request) {
   try {
     switch (event) {
       case 'payment.captured': {
-        // Payment was successful — mark order as paid in the database
         const razorpayOrderId = paymentEntity?.order_id;
-        if (razorpayOrderId) {
-          const order = await getOrderByRazorpayOrderId(razorpayOrderId);
-          if (order) {
-            await updateOrderStatus(order.id, 'paid');
-            console.info(`[Webhook] payment.captured — Order ${order.id} marked as paid (Razorpay: ${razorpayOrderId})`);
+        const razorpayPaymentId = paymentEntity?.id;
+
+        if (!razorpayOrderId) {
+          console.warn('[Webhook] payment.captured received without order_id.');
+          break;
+        }
+
+        const existingOrder = await getOrderByRazorpayOrderId(razorpayOrderId);
+
+        if (existingOrder) {
+          // verify-payment already created the order — just ensure status is 'paid'
+          if (existingOrder.status !== 'paid') {
+            await updateOrderStatus(existingOrder.id, 'paid');
+            console.info('[Webhook] payment.captured — Order updated to paid.', {
+              orderId: existingOrder.id,
+              razorpayOrderId,
+            });
           } else {
-            console.warn(`[Webhook] payment.captured — No order found for Razorpay order ID: ${razorpayOrderId}`);
+            console.info('[Webhook] payment.captured — Order already paid, no-op.', {
+              orderId: existingOrder.id,
+            });
           }
+        } else {
+          // verify-payment never ran (browser closed after payment)
+          // Attempt fallback order creation from Razorpay order notes
+          console.warn('[Webhook] payment.captured — No order found. Attempting fallback creation.', {
+            razorpayOrderId,
+          });
+
+          const notes: Record<string, string> = paymentEntity?.notes || {};
+          await createOrderFromNotes(razorpayOrderId, razorpayPaymentId, notes);
         }
         break;
       }
 
       case 'payment.failed': {
-        const razorpayOrderId = paymentEntity?.order_id;
-        console.warn(`[Webhook] payment.failed for Razorpay order: ${razorpayOrderId}`);
+        console.warn('[Webhook] payment.failed.', {
+          razorpayOrderId: paymentEntity?.order_id,
+          errorReason: paymentEntity?.error_reason,
+          errorDescription: paymentEntity?.error_description,
+        });
+        // No side effects — no order row created, no stock touched
         break;
       }
 
       case 'refund.created': {
-        console.info('[Webhook] refund.created event received');
+        console.info('[Webhook] refund.created.', {
+          refundId: paymentEntity?.id,
+          amount: paymentEntity?.amount,
+        });
         break;
       }
 
       default:
-        // Unknown events are acknowledged but not acted upon
+        // Unrecognised events are acknowledged but not acted on
+        console.info(`[Webhook] Unhandled event type: ${event}`);
         break;
     }
-  } catch (err) {
-    console.error('[Webhook] Error processing webhook event:', err);
-    // Return 200 to prevent Razorpay from retrying — log internally
-    return NextResponse.json({ success: true, message: 'Event received with processing error' });
+  } catch (err: any) {
+    console.error('[Webhook] Error processing event.', { event, error: err?.message });
+    // Return 200 so Razorpay does NOT retry — we log internally
+    return NextResponse.json({ success: true, message: 'Event received with processing error.' });
   }
 
-  // Always return 200 to acknowledge receipt
-  return NextResponse.json({ success: true, message: `Event ${event} acknowledged` });
+  // Always 200 to acknowledge receipt (Razorpay retries on non-2xx)
+  return NextResponse.json({ success: true, message: `Event ${event} acknowledged.` });
+}
+
+/**
+ * Fallback order creation from Razorpay order notes.
+ *
+ * Called when payment.captured fires but verify-payment never completed
+ * (customer paid then immediately closed browser / lost connectivity).
+ *
+ * Notes format stored by create-order:
+ *   user_id, coupon, subtotal, discount, shipping, total,
+ *   items: "product_id~variant_id~size~qty|..."
+ */
+async function createOrderFromNotes(
+  razorpayOrderId: string,
+  razorpayPaymentId: string,
+  notes: Record<string, string>
+): Promise<void> {
+  const { user_id, coupon, subtotal, discount, shipping, total, items: compactItems } = notes;
+
+  if (!user_id) {
+    console.error('[Webhook] Fallback failed — no user_id in notes.', { razorpayOrderId, notes });
+    return;
+  }
+
+  if (!compactItems) {
+    console.error('[Webhook] Fallback failed — no items in notes.', { razorpayOrderId });
+    return;
+  }
+
+  // Parse "product_id~variant_id~size~qty|..." format
+  const parsedItems = compactItems
+    .split('|')
+    .map((s) => {
+      const [product_id, variant_id, size, qty] = s.split('~');
+      return {
+        product_id: product_id || '',
+        variant_id: variant_id || undefined,
+        size: size || undefined,
+        quantity: parseInt(qty || '1', 10),
+      };
+    })
+    .filter((i) => i.product_id && i.quantity > 0);
+
+  if (parsedItems.length === 0) {
+    console.error('[Webhook] Fallback failed — could not parse items from notes.', {
+      razorpayOrderId,
+      compactItems,
+    });
+    return;
+  }
+
+  // Fetch live prices (same logic as verify-payment)
+  const allProducts = await getProducts();
+  const variantIds = parsedItems.filter((i) => i.variant_id).map((i) => i.variant_id as string);
+  const allVariants = variantIds.length > 0 ? await getVariantsByIds(variantIds) : [];
+
+  const verifiedItems: any[] = [];
+
+  for (const item of parsedItems) {
+    const dbProduct = allProducts.find((p) => p.id === item.product_id);
+    if (!dbProduct) {
+      console.warn('[Webhook] Fallback — product not found, skipping.', { product_id: item.product_id });
+      continue;
+    }
+
+    let truePrice = dbProduct.price;
+    if (item.variant_id) {
+      const dbVariant = allVariants.find((v) => v.id === item.variant_id);
+      if (dbVariant) truePrice = dbVariant.price;
+    }
+
+    verifiedItems.push({
+      product_id: dbProduct.id,
+      name: dbProduct.name,
+      price: truePrice,
+      quantity: item.quantity,
+      image: dbProduct.images?.[0] || '',
+      ...(item.variant_id ? { variant_id: item.variant_id } : {}),
+      ...(item.size ? { size: item.size } : {}),
+    });
+  }
+
+  if (verifiedItems.length === 0) {
+    console.error('[Webhook] Fallback failed — no verifiable items found.', { razorpayOrderId });
+    return;
+  }
+
+  // ── Deduct stock ──────────────────────────────────────────────────────
+  const variantItems = verifiedItems.filter((i) => i.variant_id);
+  const nonVariantItems = verifiedItems.filter((i) => !i.variant_id);
+
+  if (variantItems.length > 0) {
+    const err = await deductVariantStock(
+      variantItems.map((i) => ({ variant_id: i.variant_id, quantity: i.quantity, name: i.name }))
+    );
+    if (err) {
+      console.error('[Webhook] Fallback — variant stock deduction failed.', { razorpayOrderId, err });
+      return;
+    }
+  }
+
+  if (nonVariantItems.length > 0) {
+    const err = await deductStock(
+      nonVariantItems.map((i) => ({ product_id: i.product_id, quantity: i.quantity, name: i.name }))
+    );
+    if (err) {
+      console.error('[Webhook] Fallback — stock deduction failed.', { razorpayOrderId, err });
+      return;
+    }
+  }
+
+  // ── Create order ──────────────────────────────────────────────────────
+  const storedTotal = parseFloat(total || '0');
+  const storedSubtotal = parseFloat(subtotal || '0');
+  const storedDiscount = parseFloat(discount || '0');
+  const storedShipping = parseFloat(shipping || '0');
+  const couponCode = coupon || '';
+
+  await createOrder({
+    user_id,
+    items: verifiedItems,
+    subtotal: storedSubtotal,
+    discount_amount: storedDiscount,
+    coupon_code: couponCode,
+    shipping_fee: storedShipping,
+    total: storedTotal,
+    status: 'paid',
+    razorpay_order_id: razorpayOrderId,
+    razorpay_payment_id: razorpayPaymentId,
+    // Address not available via webhook — stored as empty object.
+    // The order will still be visible in admin with all item/payment data.
+    shipping_address: {} as any,
+  });
+
+  if (couponCode) {
+    await incrementCouponUsageCount(couponCode);
+  }
+
+  console.info('[Webhook] Fallback order created successfully.', {
+    razorpayOrderId,
+    razorpayPaymentId,
+    total: storedTotal,
+    itemCount: verifiedItems.length,
+  });
 }

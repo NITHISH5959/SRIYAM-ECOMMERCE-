@@ -61,7 +61,7 @@ export default async function OrderSuccessPage({ params }: OrderSuccessProps) {
         </div>
         <div className="pt-2 text-xs text-zinc-500 flex justify-center items-center gap-2 bg-zinc-50 p-3 rounded-xl border border-zinc-100">
           <Truck className="w-4 h-4 text-amber-700 flex-shrink-0" />
-          <span>Items reserved &amp; packed · Estimated delivery: 2 – 4 business days via Shiprocket</span>
+          <span>Items reserved &amp; packed · Estimated delivery: 2 – 4 business days via Express Courier</span>
         </div>
       </div>
 

@@ -34,21 +34,6 @@ export async function createClient() {
  * Automatically falls back to allowing actions if we are running in local demo / placeholder mode.
  */
 export async function checkIsAdmin(): Promise<boolean> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-  // In development with placeholder credentials, bypass auth to allow local testing.
-  // In production this block is NEVER entered — real Supabase auth is always enforced.
-  const isDemoMode =
-    process.env.NODE_ENV === 'development' &&
-    (!supabaseUrl ||
-      supabaseUrl.includes('your-supabase-project-id') ||
-      supabaseAnonKey.includes('placeholder'));
-
-  if (isDemoMode) {
-    return true; // Bypass validation in local demo environment (dev only)
-  }
-
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();

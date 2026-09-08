@@ -33,8 +33,11 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   const currentCategory = searchParams.category || 'all';
   const currentSort = searchParams.sort || 'default';
 
-  const categories = await getCategories();
-  let products = await getProducts(currentCategory);
+  const [categories, rawProducts] = await Promise.all([
+    getCategories(),
+    getProducts(currentCategory),
+  ]);
+  let products = rawProducts;
 
   // Sorting logic
   if (currentSort === 'price-low') {

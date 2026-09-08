@@ -36,8 +36,8 @@ interface CartContextType {
   removeCoupon: () => void;
 
   // Auth User state helper
-  user: { id: string; email: string; name: string } | null;
-  setUser: (user: { id: string; email: string; name: string } | null) => void;
+  user: { id: string; email: string; name: string; isAdmin?: boolean } | null;
+  setUser: (user: { id: string; email: string; name: string; isAdmin?: boolean } | null) => void;
   cartLoaded: boolean;
 }
 
@@ -59,7 +59,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [couponMessage, setCouponMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // User state
-  const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string; name: string; isAdmin?: boolean } | null>(null);
   const [cartLoaded, setCartLoaded] = useState(false);
 
   // Load cart and user from localStorage on mount (client-side only to prevent hydration mismatch)

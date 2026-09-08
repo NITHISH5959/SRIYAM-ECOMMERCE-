@@ -1,11 +1,33 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { createOrder, deductStock, deductVariantStock, getVariantsByIds, getProducts, validateCouponCode, incrementCouponUsageCount } from '@/lib/data';
-import { validateEnv } from '@/lib/env';
+import Razorpay from 'razorpay';
+import {
+  createOrder,
+  deductStock,
+  deductVariantStock,
+  getVariantsByIds,
+  getProducts,
+  validateCouponCode,
+  incrementCouponUsageCount,
+} from '@/lib/data';
 import { verifyPaymentLimiter, getClientIp } from '@/lib/rate-limit';
 
+/**
+ * POST /api/razorpay/verify-payment
+ *
+ * Security contract — strict step ordering:
+ *  1. Signature verification FIRST — before any DB writes or stock deductions.
+ *     (Previous version deducted stock before signature check — tampered requests
+ *     would corrupt inventory.)
+ *  2. Server-side price recalculation — client prices are never trusted.
+ *  3. Stock deduction — only after signature is confirmed valid.
+ *  4. Auto-refund — if stock runs out between order-creation and payment-capture,
+ *     the customer is automatically refunded via Razorpay Refund API.
+ *  5. Order creation — only after stock is confirmed deducted.
+ *  6. Coupon usage increment — only after order is persisted.
+ */
 export async function POST(request: Request) {
-  // Rate limiting: 5 verify attempts per minute per IP
+  // ── Rate limiting: 5 verify attempts / minute / IP ─────────────────────
   const ip = getClientIp(request);
   const { success: allowed } = verifyPaymentLimiter.check(ip);
   if (!allowed) {
@@ -16,66 +38,115 @@ export async function POST(request: Request) {
   }
 
   try {
-    validateEnv();
-
     const body = await request.json();
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, orderData } = body;
 
-    if (!orderData || !orderData.items || orderData.items.length === 0) {
-      return NextResponse.json({ success: false, message: 'Invalid order data: No items' }, { status: 400 });
+    if (!orderData?.items?.length) {
+      return NextResponse.json({ success: false, message: 'Invalid order data: no items.' }, { status: 400 });
     }
 
-    // ── 1. Fetch lookup data: products + variants ─────────────────────────────
-    const allProducts = await getProducts();
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 1 — SIGNATURE VERIFICATION (must run before any side effects)
+    // ════════════════════════════════════════════════════════════════════════
+    const secret = process.env.RAZORPAY_KEY_SECRET || '';
+    const isTestMode =
+      !secret ||
+      secret.includes('placeholder') ||
+      razorpay_order_id?.startsWith('order_test_');
 
-    // Collect variant IDs from Frame items
+    if (!isTestMode) {
+      if (!razorpay_signature || !razorpay_order_id || !razorpay_payment_id) {
+        return NextResponse.json(
+          { success: false, message: 'Missing payment verification parameters.' },
+          { status: 400 }
+        );
+      }
+
+      const generatedSig = crypto
+        .createHmac('sha256', secret)
+        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+        .digest('hex');
+
+      // timingSafeEqual prevents timing-attack signature extraction
+      let signaturesMatch = false;
+      try {
+        signaturesMatch = crypto.timingSafeEqual(
+          Buffer.from(generatedSig, 'hex'),
+          Buffer.from(razorpay_signature, 'hex')
+        );
+      } catch {
+        // Buffer length mismatch → definitely invalid signature
+        signaturesMatch = false;
+      }
+
+      if (!signaturesMatch) {
+        console.warn('[verify-payment] Signature mismatch — possible tampered request.', {
+          razorpay_order_id,
+          ip,
+        });
+        return NextResponse.json(
+          { success: false, message: 'Payment verification failed. Please contact support.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 2 — FETCH CURRENT PRICES FROM DB
+    // ════════════════════════════════════════════════════════════════════════
+    const allProducts = await getProducts();
     const variantIds: string[] = orderData.items
       .filter((i: any) => i.variant_id)
       .map((i: any) => i.variant_id);
-    const allVariants = await getVariantsByIds(variantIds);
+    const allVariants = variantIds.length > 0 ? await getVariantsByIds(variantIds) : [];
 
-    // ── 2. Recalculate Subtotal & Verify Items Server-Side ────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 3 — RECALCULATE TOTALS SERVER-SIDE
+    // ════════════════════════════════════════════════════════════════════════
     let calculatedSubtotal = 0;
-    const verifiedItems = [];
+    const verifiedItems: any[] = [];
 
     for (const item of orderData.items) {
-      const dbProduct = allProducts.find((p) => p.id === item.product_id);
+      const dbProduct = allProducts.find((p: any) => p.id === item.product_id);
       if (!dbProduct) {
-        return NextResponse.json({ success: false, message: 'One or more products could not be verified.' }, { status: 400 });
+        return NextResponse.json(
+          { success: false, message: 'One or more products could not be verified.' },
+          { status: 400 }
+        );
       }
 
       let truePrice: number;
-
       if (item.variant_id) {
-        // Frame product — look up price from product_variants (prevents price spoofing)
-        const dbVariant = allVariants.find((v) => v.id === item.variant_id);
+        const dbVariant = allVariants.find((v: any) => v.id === item.variant_id);
         if (!dbVariant) {
           return NextResponse.json(
-            { success: false, message: `Variant for "${dbProduct.name}" (${item.size || ''}) could not be verified.` },
+            {
+              success: false,
+              message: `Variant for "${dbProduct.name}" (${item.size || ''}) could not be verified.`,
+            },
             { status: 400 }
           );
         }
         truePrice = dbVariant.price;
       } else {
-        // Rack Poster — use products.price
         truePrice = dbProduct.price;
       }
 
       calculatedSubtotal += truePrice * item.quantity;
-
       verifiedItems.push({
         product_id: dbProduct.id,
         name: dbProduct.name,
         price: truePrice,
         quantity: item.quantity,
         image: item.image || dbProduct.images?.[0] || '',
-        // Preserve variant metadata in the stored order item
-        ...(item.variant_id && { variant_id: item.variant_id }),
-        ...(item.size && { size: item.size }),
+        ...(item.variant_id ? { variant_id: item.variant_id } : {}),
+        ...(item.size ? { size: item.size } : {}),
       });
     }
 
-    // ── 3. Validate Coupon Server-Side ──────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 4 — RE-VALIDATE COUPON
+    // ════════════════════════════════════════════════════════════════════════
     let calculatedDiscount = 0;
     let isFreeShipping = false;
 
@@ -85,12 +156,15 @@ export async function POST(request: Request) {
         calculatedDiscount = couponRes.discountAmount;
         isFreeShipping = couponRes.isFreeShipping;
       }
+      // Invalid coupon at verify time: silently ignore (discount = 0)
     }
 
-    // ── 4. Validate Shipping Server-Side ────────────────────────────────────
-    let calculatedShipping = 0;
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 5 — VALIDATE SHIPPING
+    // ════════════════════════════════════════════════════════════════════════
     const freeShippingThreshold = 999;
     const defaultShippingFee = 50;
+    let calculatedShipping = 0;
 
     if (calculatedSubtotal < freeShippingThreshold && !isFreeShipping) {
       calculatedShipping =
@@ -100,68 +174,86 @@ export async function POST(request: Request) {
     const calculatedTotal =
       Math.max(0, calculatedSubtotal - calculatedDiscount) + calculatedShipping;
 
-    // ── 5. Stock deduction — route by item type ──────────────────────────────
-    // Variant items (Frames) and non-variant items (Rack Posters) deducted separately
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 6 — DEDUCT STOCK
+    // Payment is already confirmed at this point (signature verified above).
+    // If stock fails → auto-refund the customer immediately.
+    // ════════════════════════════════════════════════════════════════════════
     const variantItems = verifiedItems.filter((i: any) => i.variant_id);
     const nonVariantItems = verifiedItems.filter((i: any) => !i.variant_id);
+    let stockError: string | null = null;
 
     if (variantItems.length > 0) {
-      const variantStockError = await deductVariantStock(
+      stockError = await deductVariantStock(
         variantItems.map((i: any) => ({
           variant_id: i.variant_id,
           quantity: i.quantity,
           name: i.size ? `${i.name} (${i.size})` : i.name,
         }))
       );
-      if (variantStockError) {
-        return NextResponse.json({ success: false, message: variantStockError }, { status: 400 });
-      }
     }
 
-    if (nonVariantItems.length > 0) {
-      const stockError = await deductStock(
+    if (!stockError && nonVariantItems.length > 0) {
+      stockError = await deductStock(
         nonVariantItems.map((i: any) => ({
           product_id: i.product_id,
           quantity: i.quantity,
           name: i.name,
         }))
       );
-      if (stockError) {
-        return NextResponse.json({ success: false, message: stockError }, { status: 400 });
+    }
+
+    if (stockError) {
+      // Payment was captured but stock ran out — auto-refund
+      const isRealPayment =
+        !isTestMode &&
+        razorpay_payment_id &&
+        !razorpay_payment_id.startsWith('pay_mock');
+
+      if (isRealPayment) {
+        const key_id = process.env.RAZORPAY_KEY_ID || '';
+        const key_secret = process.env.RAZORPAY_KEY_SECRET || '';
+        try {
+          const rzp = new Razorpay({ key_id, key_secret });
+          await rzp.payments.refund(razorpay_payment_id, {
+            amount: Math.round(calculatedTotal * 100),
+            speed: 'optimum',
+            notes: {
+              reason: 'Out of stock — automatic refund by Sriyam Store',
+            },
+          });
+          console.info('[verify-payment] Auto-refund issued.', {
+            razorpay_payment_id,
+            amount: calculatedTotal,
+            stockError,
+          });
+        } catch (refundErr: any) {
+          // Log fully for manual follow-up, but don't expose to client
+          console.error('[verify-payment] CRITICAL — Auto-refund failed. Manual action required.', {
+            razorpay_order_id,
+            razorpay_payment_id,
+            amount: calculatedTotal,
+            stockError,
+            refundError: refundErr?.message,
+          });
+        }
       }
-    }
 
-    // ── 6. Payment signature verification ──────────────────────────────────
-    const secret = process.env.RAZORPAY_KEY_SECRET || '';
-    const isTestMode =
-      !secret ||
-      secret.includes('placeholder') ||
-      razorpay_order_id?.startsWith('order_test_');
-
-    let isValid = false;
-
-    if (!isTestMode && razorpay_signature && razorpay_order_id && razorpay_payment_id) {
-      const generatedSig = crypto
-        .createHmac('sha256', secret)
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest('hex');
-      isValid = crypto.timingSafeEqual(
-        Buffer.from(generatedSig, 'hex'),
-        Buffer.from(razorpay_signature, 'hex')
-      );
-    } else if (isTestMode) {
-      // Allow test/demo mode orders through
-      isValid = true;
-    }
-
-    if (!isValid) {
       return NextResponse.json(
-        { success: false, message: 'Payment verification failed. Invalid signature.' },
+        {
+          success: false,
+          message: isRealPayment
+            ? `${stockError} Your payment has been automatically refunded. Please allow 5–7 business days.`
+            : stockError,
+          autoRefunded: isRealPayment,
+        },
         { status: 400 }
       );
     }
 
-    // ── 7. Create confirmed order record ──────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 7 — CREATE CONFIRMED ORDER RECORD
+    // ════════════════════════════════════════════════════════════════════════
     const newOrder = await createOrder({
       user_id: orderData.user_id || 'demo_user_id',
       items: verifiedItems,
@@ -176,7 +268,9 @@ export async function POST(request: Request) {
       shipping_address: orderData.shipping_address,
     });
 
-    // ── 8. Increment coupon used_count (only after confirmed payment) ────
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 8 — INCREMENT COUPON USAGE (only after order is persisted)
+    // ════════════════════════════════════════════════════════════════════════
     if (orderData.coupon_code) {
       await incrementCouponUsageCount(orderData.coupon_code);
     }
@@ -187,6 +281,7 @@ export async function POST(request: Request) {
       message: 'Payment verified and order created successfully.',
     });
   } catch (error: any) {
+    console.error('[verify-payment] Unhandled error:', { message: error?.message });
     return NextResponse.json(
       { success: false, message: 'Payment verification failed. Please contact support.' },
       { status: 500 }

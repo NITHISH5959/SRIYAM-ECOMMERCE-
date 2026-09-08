@@ -52,13 +52,15 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
 }
 
 export default async function ProductPage({ params }: ProductPageProps) {
-  const product = await getProductBySlug(params.slug);
+  const [product, allProducts] = await Promise.all([
+    getProductBySlug(params.slug),
+    getProducts(),
+  ]);
 
   if (!product) {
     notFound();
   }
 
-  const allProducts = await getProducts();
   const relatedProducts = allProducts
     .filter((p) => p.id !== product.id && p.category_id === product.category_id)
     .slice(0, 4);

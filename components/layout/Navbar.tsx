@@ -155,12 +155,14 @@ export default function Navbar() {
               </Link>
             )}
 
-            {/* Admin Badge */}
-            <Link href="/admin"
-              className="hidden xl:flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded-md transition-colors">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Admin</span>
-            </Link>
+            {/* Admin Badge — only visible to admin users (UI convenience; real gate is server-side) */}
+            {user?.isAdmin && (
+              <Link href="/sriyamadmin"
+                className="hidden xl:flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded-md transition-colors">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Admin</span>
+              </Link>
+            )}
 
             {/* Cart icon — badge pops on count change via React key */}
             <Link href="/cart" className="relative p-2 text-zinc-700 hover:text-amber-800 transition-colors" aria-label="Open cart">
@@ -219,10 +221,12 @@ export default function Navbar() {
                   Sign In / Create Account
                 </Link>
               )}
-              <Link href="/admin" onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-zinc-50 rounded-md">
-                <ShieldCheck className="w-4 h-4" />Admin Panel
-              </Link>
+              {user?.isAdmin && (
+                <Link href="/sriyamadmin" onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-zinc-50 rounded-md">
+                  <ShieldCheck className="w-4 h-4" />Admin Panel
+                </Link>
+              )}
             </div>
           </div>
         )}

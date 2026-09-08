@@ -6,8 +6,8 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
-import { Mail, Lock, ArrowRight, UserCheck } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { Mail, Lock, ArrowRight } from 'lucide-react';
 
 function LoginContent() {
   const router = useRouter();
@@ -26,17 +26,6 @@ function LoginContent() {
     setErrorMessage('');
 
     try {
-      // Demo mode: Supabase not configured — allow any login for local testing
-      if (!isSupabaseConfigured()) {
-        setUser({
-          id: `usr_${Date.now()}`,
-          email: email,
-          name: email.split('@')[0] || 'Customer',
-        });
-        router.push(redirectUrl);
-        return;
-      }
-
       const supabase = createClient();
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -44,16 +33,29 @@ function LoginContent() {
       });
 
       if (error) {
-        // Real Supabase is configured — show the actual auth error
         setErrorMessage(error.message || 'Invalid email or password. Please try again.');
         return;
       }
 
       if (data?.user) {
+        // Query profiles.is_admin so the Admin nav link only shows for real admins.
+        let isAdmin = false;
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('is_admin')
+            .eq('id', data.user.id)
+            .single();
+          isAdmin = profile?.is_admin === true;
+        } catch {
+          // Safe default
+        }
+
         setUser({
           id: data.user.id,
           email: data.user.email || email,
           name: data.user.user_metadata?.full_name || email.split('@')[0],
+          isAdmin,
         });
         router.push(redirectUrl);
       }
@@ -62,15 +64,6 @@ function LoginContent() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleDemoLogin = () => {
-    setUser({
-      id: 'demo_user_id',
-      email: 'sriram@example.com',
-      name: 'Sriram Ramanathan',
-    });
-    router.push(redirectUrl);
   };
 
   return (
@@ -145,17 +138,8 @@ function LoginContent() {
         </button>
       </form>
 
-      {/* Demo Fast Login Trigger */}
-      <div className="pt-4 border-t border-zinc-100 space-y-3">
-        <button
-          onClick={handleDemoLogin}
-          className="w-full py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors"
-        >
-          <UserCheck className="w-4 h-4 text-amber-700" />
-          <span>Instant Demo Login (Sriram)</span>
-        </button>
-
-        <p className="text-xs text-center text-zinc-500">
+      <div className="pt-4 border-t border-zinc-100 text-center">
+        <p className="text-xs text-zinc-500">
           Don't have an account?{' '}
           <Link
             href={`/signup?redirect=${encodeURIComponent(redirectUrl)}`}

@@ -2,15 +2,15 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { STORE_CONFIG } from '@/lib/config';
-import { MessageCircle, ShieldCheck, Heart } from 'lucide-react';
+import { MessageCircle, Heart, Truck, ShieldCheck } from 'lucide-react';
 
 export default function Footer() {
   return (
     <footer className="bg-zinc-950 text-zinc-400 text-xs border-t border-zinc-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 lg:gap-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-12">
           {/* Brand Col */}
-          <div className="space-y-5 md:col-span-1">
+          <div className="space-y-5">
             <div className="flex items-center gap-3">
               <div className="w-14 h-14 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center flex-shrink-0 ring-1 ring-white/20 shadow-lg">
                 <Image
@@ -34,6 +34,16 @@ export default function Footer() {
             <p className="text-zinc-400 text-xs leading-relaxed max-w-sm">
               {STORE_CONFIG.description}
             </p>
+            <div className="space-y-2 pt-1 text-[11px] text-zinc-400">
+              <div className="flex items-center gap-2">
+                <Truck className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                <span>Free Delivery on orders over ₹999</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                <span>100% Secure Online & Cash Payments</span>
+              </div>
+            </div>
             <div className="pt-2">
               <a
                 href={`https://wa.me/${STORE_CONFIG.whatsappNumber.replace(/\+/g, '')}`}
@@ -47,8 +57,8 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Quick Links */}
-          <div className="space-y-3">
+          {/* Categories */}
+          <div className="space-y-3 md:pl-6">
             <h4 className="text-zinc-200 font-semibold uppercase tracking-wider text-[11px]">
               Categories
             </h4>
@@ -71,38 +81,17 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* Customer Care */}
-          <div className="space-y-3">
-            <h4 className="text-zinc-200 font-semibold uppercase tracking-wider text-[11px]">
-              Store & Admin
-            </h4>
-            <ul className="space-y-2">
-              <li>
-                <Link href="/admin" className="hover:text-amber-400 transition-colors flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Admin Management</span>
-                </Link>
-              </li>
-              <li>
-                <span className="text-zinc-500">Free Delivery over ₹999</span>
-              </li>
-              <li>
-                <span className="text-zinc-500">Secure Online & Cash Payments</span>
-              </li>
-            </ul>
-          </div>
-
           {/* Contact Details */}
           <div className="space-y-3">
             <h4 className="text-zinc-200 font-semibold uppercase tracking-wider text-[11px]">
               Contact Us
             </h4>
-            <p className="text-zinc-400 leading-relaxed">
-              Email: {STORE_CONFIG.contact.email}
+            <p className="text-zinc-400 leading-relaxed space-y-1">
+              <span>Email: {STORE_CONFIG.contact.email}</span>
               <br />
-              Phone: {STORE_CONFIG.contact.phone}
+              <span>Phone: {STORE_CONFIG.contact.phone}</span>
               <br />
-              Location: {STORE_CONFIG.contact.location}
+              <span>Location: {STORE_CONFIG.contact.location}</span>
             </p>
           </div>
         </div>

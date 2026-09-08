@@ -64,7 +64,7 @@ const nextConfig = {
               "font-src 'self' https://fonts.gstatic.com",
               // 'self' covers /_next/image which Next.js uses for optimized local images
               "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in https://checkout.razorpay.com https://lh3.googleusercontent.com",
-              "connect-src 'self' https://*.supabase.co https://*.supabase.in https://api.razorpay.com https://checkout.razorpay.com https://apiv2.shiprocket.in https://wa.me",
+              "connect-src 'self' https://*.supabase.co https://*.supabase.in https://api.razorpay.com https://checkout.razorpay.com https://wa.me",
               "frame-src https://checkout.razorpay.com api.razorpay.com",
               "object-src 'none'",
               "base-uri 'self'",

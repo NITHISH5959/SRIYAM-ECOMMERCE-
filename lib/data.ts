@@ -62,10 +62,13 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
   try {
     if (!isSupabaseConfigured()) throw new Error('not configured');
     const supabase = createClient();
-    let query = supabase.from('products').select('id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories(id, name, slug)').eq('is_active', true);
-    if (categorySlug && categorySlug !== 'all') {
-      const { data: catData } = await supabase.from('categories').select('id').eq('slug', categorySlug).single();
-      if (catData) query = query.eq('category_id', catData.id);
+    const isFiltered = categorySlug && categorySlug !== 'all';
+    const selectClause = isFiltered
+      ? 'id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories!inner(id, name, slug)'
+      : 'id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories(id, name, slug)';
+    let query = supabase.from('products').select(selectClause).eq('is_active', true);
+    if (isFiltered) {
+      query = query.eq('category.slug', categorySlug);
     }
     const { data, error } = await query;
     if (!error && data && data.length > 0) return data as unknown as Product[];
@@ -99,13 +102,19 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
       return null;
     }
     const supabase = createClient();
-    const { data, error } = await supabase.from('products').select('id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories(id, name, slug)').eq('slug', slug).single();
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories(id, name, slug), variants:product_variants(id, product_id, size, price, compare_at_price, stock, is_active)')
+      .eq('slug', slug)
+      .single();
+
     if (!error && data) {
       const product = data as unknown as Product;
-      // Fetch variants for this product (only Frame products have them)
-      const { data: vData } = await supabase.from('product_variants').select('id, product_id, size, price, compare_at_price, stock, is_active').eq('product_id', product.id).eq('is_active', true).order('size');
-      if (vData && vData.length > 0) {
-        product.variants = vData as ProductVariant[];
+      if ((data as any).variants && Array.isArray((data as any).variants)) {
+        const activeVars = ((data as any).variants as ProductVariant[]).filter(v => v.is_active);
+        if (activeVars.length > 0) {
+          product.variants = activeVars.sort((a, b) => a.size.localeCompare(b.size));
+        }
       }
       return product;
     }
@@ -478,12 +487,12 @@ export async function deleteCoupon(id: string): Promise<boolean> {
 
 export async function getAddresses(userId: string): Promise<Address[]> {
   try {
-    if (!isSupabaseConfigured()) return memoryAddresses.filter(a => a.user_id === userId || userId === 'demo_user_id');
+    if (!isSupabaseConfigured()) return memoryAddresses.filter(a => a.user_id === userId);
     const supabase = createClient();
     const { data, error } = await supabase.from('addresses').select('id, user_id, name, phone, line1, line2, city, state, pincode, is_default').eq('user_id', userId);
     if (!error && data && data.length > 0) return data as Address[];
   } catch {}
-  return memoryAddresses.filter(a => a.user_id === userId || userId === 'demo_user_id');
+  return memoryAddresses.filter(a => a.user_id === userId);
 }
 
 export async function saveAddress(address: Partial<Address>): Promise<Address> {
@@ -585,12 +594,12 @@ export async function getOrderByRazorpayOrderId(razorpayOrderId: string): Promis
 
 export async function getOrdersByUser(userId: string): Promise<Order[]> {
   try {
-    if (!isSupabaseConfigured()) return memoryOrders.filter(o => o.user_id === userId || userId === 'demo_user_id').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    if (!isSupabaseConfigured()) return memoryOrders.filter(o => o.user_id === userId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     const supabase = createClient();
     const { data, error } = await supabase.from('orders').select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at').eq('user_id', userId).order('created_at', { ascending: false });
     if (!error && data) return data as Order[];
   } catch {}
-  return memoryOrders.filter(o => o.user_id === userId || userId === 'demo_user_id').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return memoryOrders.filter(o => o.user_id === userId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
 export async function getAllOrders(statusFilter?: string): Promise<Order[]> {

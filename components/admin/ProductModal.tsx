@@ -83,6 +83,9 @@ export default function ProductModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
+  // Records the category_id the product had when this modal session opened.
+  // Used to detect mid-edit category switches (e.g. Rack→Frames) vs initial load.
+  const initialCategoryRef = useRef<string | undefined>(undefined);
 
   // Detect if the currently selected category is "Frames"
   const framesCategory = categories.find(c => c.slug === FRAMES_SLUG);
@@ -111,9 +114,15 @@ export default function ProductModal({
     setGlobalError(null);
   }, [productToEdit, categories, isOpen]);
 
-  // ── Load existing variants when editing a Frame product ─────────────────────
+  // ── Load existing variants when editing a Frame product (initial open) ────────
   useEffect(() => {
     if (!isOpen) return;
+
+    // Record which category the product had at the moment this modal opened.
+    // This lets the category-switch effect below distinguish "user changed the
+    // dropdown" from "modal just opened with this category already set".
+    initialCategoryRef.current = productToEdit?.category_id ?? undefined;
+
     const cat = categories.find(c => c.slug === FRAMES_SLUG);
     const isFrame = cat && productToEdit?.category_id === cat.id;
     if (!isFrame || !productToEdit?.id) return;
@@ -140,6 +149,54 @@ export default function ProductModal({
       }
     }).finally(() => setLoadingVariants(false));
   }, [isOpen, productToEdit, categories]);
+
+  // ── React to mid-edit category switch TO Frames ─────────────────────────────
+  // Fires whenever the user changes the category dropdown during an edit session.
+  // If they switch to Frames and the product already has variant rows in the DB
+  // (e.g. it was briefly Frames before), load those instead of showing placeholders.
+  // For new products (productToEdit is null) this effect is a no-op.
+  useEffect(() => {
+    if (!isOpen || !productToEdit?.id) return;
+
+    const framesCat = categories.find(c => c.slug === FRAMES_SLUG);
+    if (!framesCat) return;
+
+    // Only act when the user switched TO Frames from something else.
+    // initialCategoryRef.current holds the category at modal-open time.
+    const switchedToFrames =
+      formData.category_id === framesCat.id &&
+      initialCategoryRef.current !== framesCat.id;
+
+    if (!switchedToFrames) return;
+
+    // Attempt to load any existing variants for this product.
+    // Result: existing rows are shown with real prices; if none exist, defaults stay.
+    setLoadingVariants(true);
+    getVariantsByProductId(productToEdit.id)
+      .then((fetched) => {
+        if (fetched.length > 0) {
+          setVariants(
+            DEFAULT_VARIANTS.map(dv => {
+              const existing = fetched.find(fv => fv.size === dv.size);
+              return existing
+                ? {
+                    id: existing.id,
+                    size: existing.size,
+                    price: existing.price,
+                    compare_at_price: existing.compare_at_price,
+                    stock: existing.stock,
+                    is_active: existing.is_active,
+                  }
+                : { ...dv };
+            })
+          );
+        }
+        // If no variants found, keep the current defaults —
+        // this product is being assigned to Frames for the first time.
+      })
+      .finally(() => setLoadingVariants(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.category_id]);
 
   // ── Auto-generate slug from name ────────────────────────────────────────────
   const handleNameChange = (name: string) => {
@@ -267,7 +324,18 @@ export default function ProductModal({
 
       // Save variants for Frame products
       if (isFramesProduct && saved.id) {
-        await saveVariants(saved.id, variants);
+        try {
+          await saveVariants(saved.id, variants);
+        } catch (variantErr) {
+          console.error('[ProductModal] Failed to save A3/A4 variants:', variantErr);
+          setGlobalError(
+            'Product was saved, but A3/A4 variant pricing could not be written. ' +
+            'Please re-open this product and save again.'
+          );
+          setIsSaving(false);
+          // Don't close the modal — user needs to know and can retry.
+          return;
+        }
       }
 
       await revalidateStorefront();

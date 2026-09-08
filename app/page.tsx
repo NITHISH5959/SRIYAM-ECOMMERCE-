@@ -24,8 +24,10 @@ export const metadata: Metadata = {
 export const revalidate = 60; // ISR revalidate every 60 seconds
 
 export default async function HomePage() {
-  const products = await getProducts();
-  const categories = await getCategories();
+  const [products, categories] = await Promise.all([
+    getProducts(),
+    getCategories(),
+  ]);
 
   const featuredProducts = products.slice(0, 8);
 
