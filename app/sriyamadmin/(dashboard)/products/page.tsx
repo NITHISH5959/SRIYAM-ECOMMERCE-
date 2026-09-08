@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Product, Category } from '@/types';
-import { getAllProductsAdmin, getCategories, deleteProduct } from '@/lib/data';
-import { revalidateStorefront } from '@/app/actions';
+import { getAllProductsAdmin, getCategories } from '@/lib/data';
+import { deleteProductAction, revalidateStorefront } from '@/app/actions';
 import ProductModal from '@/components/admin/ProductModal';
 import PlaceholderImage from '@/components/ui/PlaceholderImage';
 import { Plus, Edit2, Trash2, Search, PackageCheck, AlertCircle, RefreshCw } from 'lucide-react';
@@ -42,9 +42,12 @@ export default function AdminProductsPage() {
 
   const handleDelete = async (id: string, name: string) => {
     if (confirm(`Are you sure you want to delete "${name}"?`)) {
-      await deleteProduct(id);
-      await revalidateStorefront();
-      await loadData();
+      try {
+        await deleteProductAction(id);
+        await loadData();
+      } catch (err: any) {
+        alert(`Failed to delete product: ${err?.message || 'Unknown error'}`);
+      }
     }
   };
 

@@ -52,7 +52,13 @@ export async function getCategories(): Promise<Category[]> {
     const supabase = createClient();
     const { data, error } = await supabase.from('categories').select('id, name, slug');
     if (!error && data && data.length > 0) return data;
-  } catch {}
+
+    // If Supabase table is empty, auto-seed default categories
+    const { data: seeded } = await supabase.from('categories').upsert(INITIAL_CATEGORIES).select('id, name, slug');
+    if (seeded && seeded.length > 0) return seeded;
+  } catch (err) {
+    console.error('[getCategories error]', err);
+  }
   return memoryCategories;
 }
 
@@ -133,19 +139,28 @@ function isRealUuid(id: string): boolean {
 }
 
 export async function saveProduct(product: Partial<Product>): Promise<Product> {
-  try {
-    if (!isSupabaseConfigured()) throw new Error('not configured');
+  if (isSupabaseConfigured()) {
     const supabase = createClient();
     if (product.id && isRealUuid(product.id)) {
       // Update existing row
       const { data, error } = await supabase.from('products').update(product).eq('id', product.id).select('*, category:categories(*)').single();
-      if (!error && data) return data as Product;
+      if (error) {
+        console.error('[saveProduct update error]', error);
+        throw new Error(error.message || 'Failed to update product in Supabase database');
+      }
+      if (data) return data as Product;
     } else {
       // Insert new row
       const { data, error } = await supabase.from('products').insert([product]).select('*, category:categories(*)').single();
-      if (!error && data) return data as Product;
+      if (error) {
+        console.error('[saveProduct insert error]', error);
+        throw new Error(error.message || 'Failed to insert product into Supabase database');
+      }
+      if (data) return data as Product;
     }
-  } catch {}
+  }
+
+  // Fallback for local demo mode without Supabase credentials
   if (product.id) {
     const idx = memoryProducts.findIndex(p => p.id === product.id);
     if (idx !== -1) {
@@ -167,12 +182,16 @@ export async function saveProduct(product: Partial<Product>): Promise<Product> {
 }
 
 export async function deleteProduct(id: string): Promise<boolean> {
-  try {
-    if (!isSupabaseConfigured()) throw new Error('not configured');
+  if (isSupabaseConfigured()) {
     const supabase = createClient();
     const { error } = await supabase.from('products').delete().eq('id', id);
-    if (!error) { memoryProducts = memoryProducts.filter(p => p.id !== id); return true; }
-  } catch {}
+    if (error) {
+      console.error('[deleteProduct error]', error);
+      throw new Error(error.message || 'Failed to delete product from Supabase database');
+    }
+    memoryProducts = memoryProducts.filter(p => p.id !== id);
+    return true;
+  }
   memoryProducts = memoryProducts.filter(p => p.id !== id);
   return true;
 }
@@ -206,8 +225,7 @@ export async function saveVariants(productId: string, variants: Array<{
   stock: number;
   is_active?: boolean;
 }>): Promise<boolean> {
-  try {
-    if (!isSupabaseConfigured()) throw new Error('not configured');
+  if (isSupabaseConfigured()) {
     const supabase = createClient();
     for (const v of variants) {
       const row = {
@@ -219,18 +237,29 @@ export async function saveVariants(productId: string, variants: Array<{
         is_active: v.is_active ?? true,
       };
       if (v.id && isRealUuid(v.id)) {
-        await supabase.from('product_variants').update(row).eq('id', v.id);
+        const { error } = await supabase.from('product_variants').update(row).eq('id', v.id);
+        if (error) {
+          console.error('[saveVariants update error]', error);
+          throw new Error(error.message || `Failed to update ${v.size} variant in Supabase database`);
+        }
       } else {
-        await supabase.from('product_variants')
+        const { error } = await supabase.from('product_variants')
           .upsert(row, { onConflict: 'product_id,size' });
+        if (error) {
+          console.error('[saveVariants upsert error]', error);
+          throw new Error(error.message || `Failed to save ${v.size} variant in Supabase database`);
+        }
       }
     }
     // Keep products.price synced to minimum variant price for ProductCard "From ₹" display
     const minPrice = Math.min(...variants.map(v => v.price));
     const minMrp = Math.min(...variants.map(v => v.compare_at_price));
-    await supabase.from('products').update({ price: minPrice, compare_at_price: minMrp }).eq('id', productId);
+    const { error: syncError } = await supabase.from('products').update({ price: minPrice, compare_at_price: minMrp }).eq('id', productId);
+    if (syncError) {
+      console.error('[saveVariants product price sync error]', syncError);
+    }
     return true;
-  } catch {}
+  }
   // Demo mode fallback
   memoryVariants = memoryVariants.filter(v => v.product_id !== productId);
   variants.forEach((v, i) => {

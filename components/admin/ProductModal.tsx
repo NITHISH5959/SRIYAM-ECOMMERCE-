@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Product, Category, ProductVariant } from '@/types';
 import { saveProduct, saveVariants, getVariantsByProductId } from '@/lib/data';
-import { revalidateStorefront } from '@/app/actions';
+import { saveProductAction, revalidateStorefront } from '@/app/actions';
 import { createClient } from '@/lib/supabase/client';
 import {
   X,
@@ -311,6 +311,7 @@ export default function ProductModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
+    setGlobalError(null);
     try {
       // For Frames: set products.price to min variant price (powers "From ₹" on cards)
       let productToSave = { ...formData, images: formData.images || [] };
@@ -320,30 +321,13 @@ export default function ProductModal({
         productToSave = { ...productToSave, price: minPrice, compare_at_price: minMrp };
       }
 
-      const saved = await saveProduct(productToSave);
+      await saveProductAction(productToSave, isFramesProduct ? variants : undefined);
 
-      // Save variants for Frame products
-      if (isFramesProduct && saved.id) {
-        try {
-          await saveVariants(saved.id, variants);
-        } catch (variantErr) {
-          console.error('[ProductModal] Failed to save A3/A4 variants:', variantErr);
-          setGlobalError(
-            'Product was saved, but A3/A4 variant pricing could not be written. ' +
-            'Please re-open this product and save again.'
-          );
-          setIsSaving(false);
-          // Don't close the modal — user needs to know and can retry.
-          return;
-        }
-      }
-
-      await revalidateStorefront();
       onSuccess();
       onClose();
-    } catch (err) {
-      console.error('Failed to save product', err);
-      setGlobalError('Failed to save product. Please try again.');
+    } catch (err: any) {
+      console.error('[ProductModal] Failed to save product:', err);
+      setGlobalError(err?.message ? `Failed to save product: ${err.message}` : 'Failed to save product. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -370,6 +354,13 @@ export default function ProductModal({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+          {globalError && (
+            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div className="flex-1"><span>{globalError}</span></div>
+              <button type="button" onClick={() => setGlobalError(null)} className="text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Product Name *</label>
