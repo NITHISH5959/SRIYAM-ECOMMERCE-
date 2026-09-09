@@ -181,7 +181,7 @@ function AddressForm({ initial, onSave, onCancel }: { initial?: Partial<Address>
 }
 
 export default function AccountAddressesPage() {
-  const { user } = useCart();
+  const { user, cartLoaded } = useCart();
   const router = useRouter();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,9 +191,10 @@ export default function AccountAddressesPage() {
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
+    if (!cartLoaded) return;
     if (!user) { router.push('/login?redirect=/account/addresses'); return; }
     getAddresses(user.id).then(data => { setAddresses(data); setLoading(false); });
-  }, [user, router]);
+  }, [user, cartLoaded, router]);
 
   const showMsg = (type: 'success' | 'error', text: string) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 3000); };
 

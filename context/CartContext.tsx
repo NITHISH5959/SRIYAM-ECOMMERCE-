@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { CartItem, Product, Coupon } from '@/types';
 import { validateCouponCode } from '@/lib/data';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface CartContextType {
   cart: CartItem[];
@@ -64,10 +65,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // Load cart and user from localStorage on mount (client-side only to prevent hydration mismatch)
   useEffect(() => {
+    let savedLocalUser: any = null;
     try {
       const savedUser = localStorage.getItem('sriyam_user');
       if (savedUser) {
-        setUser(JSON.parse(savedUser));
+        savedLocalUser = JSON.parse(savedUser);
+        setUser(savedLocalUser);
       }
     } catch (e) {
       console.error('Failed to load user from storage', e);
@@ -83,6 +86,63 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
 
     setCartLoaded(true);
+
+    // Sync live Supabase Auth session
+    if (isSupabaseConfigured()) {
+      const supabase = createClient();
+      supabase.auth.getUser().then(({ data: { user: authUser }, error }) => {
+        if (!error && authUser) {
+          supabase
+            .from('profiles')
+            .select('is_admin, full_name')
+            .eq('id', authUser.id)
+            .single()
+            .then(({ data: prof }) => {
+              const liveUser = {
+                id: authUser.id,
+                email: authUser.email || '',
+                name: prof?.full_name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Customer',
+                isAdmin: prof?.is_admin === true,
+              };
+              setUser(liveUser);
+              try {
+                localStorage.setItem('sriyam_user', JSON.stringify(liveUser));
+              } catch {}
+            });
+        }
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (session?.user) {
+          supabase
+            .from('profiles')
+            .select('is_admin, full_name')
+            .eq('id', session.user.id)
+            .single()
+            .then(({ data: prof }) => {
+              const liveUser = {
+                id: session.user.id,
+                email: session.user.email || '',
+                name: prof?.full_name || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Customer',
+                isAdmin: prof?.is_admin === true,
+              };
+              setUser(liveUser);
+              try {
+                localStorage.setItem('sriyam_user', JSON.stringify(liveUser));
+              } catch {}
+            });
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          try {
+            localStorage.removeItem('sriyam_user');
+          } catch {}
+        }
+      });
+
+      return () => {
+        subscription?.unsubscribe();
+      };
+    }
   }, []);
 
   // Save cart to localStorage

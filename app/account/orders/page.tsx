@@ -9,7 +9,7 @@ import { Order } from '@/types';
 import { STORE_CONFIG } from '@/lib/config';
 import {
   Package, ChevronDown, ChevronUp, MapPin, Clock,
-  Truck, CheckCircle2, XCircle, MessageCircle, Loader2,
+  Truck, CheckCircle2, XCircle, MessageCircle, Loader2, RefreshCw,
 } from 'lucide-react';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -139,21 +139,68 @@ function OrderCard({ order }: { order: Order }) {
 }
 
 export default function AccountOrdersPage() {
-  const { user } = useCart();
+  const { user, cartLoaded } = useCart();
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchOrders = React.useCallback(async (userId: string) => {
+    try {
+      const res = await fetch(`/api/account/orders?userId=${encodeURIComponent(userId)}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.orders)) {
+        setOrders(data.orders);
+        return;
+      }
+    } catch (err) {
+      console.warn('API orders fetch error, falling back to data helper:', err);
+    }
+
+    try {
+      const fallbackData = await getOrdersByUser(userId);
+      setOrders(fallbackData);
+    } catch (fallbackErr) {
+      console.error('getOrdersByUser fallback failed:', fallbackErr);
+    }
+  }, []);
 
   useEffect(() => {
-    if (!user) { router.push('/login?redirect=/account/orders'); return; }
-    getOrdersByUser(user.id).then(data => { setOrders(data); setLoading(false); });
-  }, [user, router]);
+    if (!cartLoaded) return;
+    if (!user) {
+      router.push('/login?redirect=/account/orders');
+      return;
+    }
+
+    setLoading(true);
+    fetchOrders(user.id).finally(() => setLoading(false));
+  }, [user, cartLoaded, router, fetchOrders]);
+
+  const handleRefresh = async () => {
+    if (!user) return;
+    setRefreshing(true);
+    await fetchOrders(user.id);
+    setRefreshing(false);
+  };
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 space-y-8">
-      <div className="border-b border-zinc-200 pb-6">
-        <p className="text-xs text-zinc-500 mb-1">Account</p>
-        <h1 className="text-3xl font-serif font-bold text-zinc-900">My Orders</h1>
+      <div className="border-b border-zinc-200 pb-6 flex items-end justify-between">
+        <div>
+          <p className="text-xs text-zinc-500 mb-1">Account</p>
+          <h1 className="text-3xl font-serif font-bold text-zinc-900">My Orders</h1>
+        </div>
+        {user && (
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            title="Refresh Orders"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-zinc-600 bg-zinc-100 hover:bg-zinc-200 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        )}
       </div>
 
       {loading ? (
