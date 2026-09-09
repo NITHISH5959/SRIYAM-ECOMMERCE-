@@ -300,21 +300,36 @@ export default function CheckoutPage() {
         }
       };
 
-      // 6. Open Razorpay Checkout modal
-      const options = {
+      // 6. Build clean, sanitized options for Razorpay Checkout
+      const prefillData: Record<string, string> = {};
+      const customerName = (selectedAddress.name || user?.name || '').trim();
+      if (customerName) {
+        prefillData.name = customerName;
+      }
+      const customerEmail = (user?.email || '').trim();
+      if (customerEmail && customerEmail.includes('@')) {
+        prefillData.email = customerEmail;
+      }
+      // Razorpay requires exact 10 digits for Indian contact numbers (no spaces, +, or dashes)
+      const digitsOnlyPhone = (selectedAddress.phone || '').replace(/\D/g, '');
+      if (digitsOnlyPhone.length >= 10) {
+        prefillData.contact = digitsOnlyPhone.slice(-10);
+      }
+
+      const options: Record<string, any> = {
         key: orderData.key,
         amount: orderData.amount,
         currency: orderData.currency || 'INR',
         name: STORE_CONFIG.name,
-        description: 'Payment for Sriyam Store Order',
-        image: typeof window !== 'undefined' ? `${window.location.origin}/logo.png` : undefined,
+        description: 'Order Payment — Sriyam Store',
         order_id: orderData.id,
-        prefill: {
-          name: selectedAddress.name || user?.name || '',
-          email: user?.email || '',
-          contact: selectedAddress.phone || '',
-        },
         theme: { color: '#92400e' },
+        modal: {
+          ondismiss: function () {
+            setPayLoading(false);
+            setPayError("Payment was cancelled. You can retry whenever you're ready.");
+          },
+        },
         handler: function (response: any) {
           try {
             verifyPayment(
@@ -328,13 +343,11 @@ export default function CheckoutPage() {
             setPayLoading(false);
           }
         },
-        modal: {
-          ondismiss: function () {
-            setPayLoading(false);
-            setPayError("Payment was cancelled. You can retry whenever you're ready.");
-          },
-        },
       };
+
+      if (Object.keys(prefillData).length > 0) {
+        options.prefill = prefillData;
+      }
 
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', function (resp: any) {
