@@ -11,6 +11,7 @@ import {
   incrementCouponUsageCount,
 } from '@/lib/data';
 import { verifyPaymentLimiter, getClientIp } from '@/lib/rate-limit';
+import { calculateDelhiveryRate, calculateTotalCartWeightGrams } from '@/lib/delhivery';
 
 /**
  * POST /api/razorpay/verify-payment
@@ -160,15 +161,27 @@ export async function POST(request: Request) {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    // STEP 5 — VALIDATE SHIPPING
+    // STEP 5 — VALIDATE SHIPPING (Delhivery Dynamic Calculation)
     // ════════════════════════════════════════════════════════════════════════
-    const freeShippingThreshold = 999;
-    const defaultShippingFee = 50;
     let calculatedShipping = 0;
-
-    if (calculatedSubtotal < freeShippingThreshold && !isFreeShipping) {
-      calculatedShipping =
-        orderData.shipping_fee > 0 ? orderData.shipping_fee : defaultShippingFee;
+    if (!isFreeShipping) {
+      const destPin = (orderData.shipping_address?.pincode || '').trim();
+      if (destPin && /^\d{6}$/.test(destPin)) {
+        const totalWeight = calculateTotalCartWeightGrams(
+          verifiedItems.map((item) => {
+            const prod = allProducts.find((p) => p.id === item.product_id);
+            return {
+              product: prod,
+              quantity: item.quantity,
+              size: item.size,
+            };
+          })
+        );
+        const rateResult = await calculateDelhiveryRate(destPin, totalWeight);
+        calculatedShipping = rateResult.success ? rateResult.shippingFee : (orderData.shipping_fee || 0);
+      } else {
+        calculatedShipping = orderData.shipping_fee || 0;
+      }
     }
 
     const calculatedTotal =

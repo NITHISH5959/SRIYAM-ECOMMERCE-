@@ -144,20 +144,15 @@ export default function CartDrawer() {
                 </div>
                 <div className="flex justify-between text-zinc-600">
                   <span>Shipping</span>
-                  <span className="font-medium text-emerald-600">
-                    {subtotal >= STORE_CONFIG.freeShippingThreshold ? 'FREE' : `${STORE_CONFIG.defaultPricing.currency}${STORE_CONFIG.defaultShippingFee}`}
+                  <span className="font-medium text-zinc-500">
+                    Calculated at checkout
                   </span>
                 </div>
                 <div className="pt-2 border-t border-zinc-200 flex justify-between text-sm font-semibold text-zinc-900">
-                  <span>Total</span>
+                  <span>Subtotal</span>
                   <span>
                     {STORE_CONFIG.defaultPricing.currency}
-                    {(
-                      subtotal +
-                      (subtotal >= STORE_CONFIG.freeShippingThreshold
-                        ? 0
-                        : STORE_CONFIG.defaultShippingFee)
-                    ).toLocaleString()}
+                    {subtotal.toLocaleString()}
                   </span>
                 </div>
               </div>

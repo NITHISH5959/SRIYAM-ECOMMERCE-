@@ -47,10 +47,9 @@ export default function CartPage() {
   const [isApplying, setIsApplying] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
 
-  // Calculate Shipping fee
-  const isFreeShipping = subtotal >= STORE_CONFIG.freeShippingThreshold || isFreeShippingCoupon;
-  const shippingFee = isFreeShipping ? 0 : STORE_CONFIG.defaultShippingFee;
-  const totalAmount = Math.max(0, subtotal - discountAmount) + shippingFee;
+  // Dynamic shipping note
+  const isFreeShipping = isFreeShippingCoupon;
+  const totalAmount = Math.max(0, subtotal - discountAmount);
 
   // Load "You May Also Like" products (4 items excluding cart items)
   useEffect(() => {
@@ -310,18 +309,18 @@ export default function CartPage() {
               )}
 
               <div className="flex justify-between text-zinc-600">
-                <span>Estimated Shipping</span>
+                <span>Shipping</span>
                 <span className="font-semibold text-zinc-900">
                   {isFreeShipping ? (
-                    <span className="text-emerald-700 font-bold uppercase">Free</span>
+                    <span className="text-emerald-700 font-bold uppercase">Free (Coupon)</span>
                   ) : (
-                    `${STORE_CONFIG.defaultPricing.currency}${shippingFee}`
+                    <span className="text-zinc-500 font-normal">Calculated at checkout</span>
                   )}
                 </span>
               </div>
 
               <div className="pt-3 border-t border-zinc-200 flex justify-between items-baseline text-base font-extrabold text-zinc-900">
-                <span>Order Total</span>
+                <span>Estimated Subtotal</span>
                 <span className="text-xl text-amber-900">
                   {STORE_CONFIG.defaultPricing.currency}{totalAmount.toLocaleString()}
                 </span>

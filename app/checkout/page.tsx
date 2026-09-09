@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Script from 'next/script';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
 import { getAddresses, saveAddress } from '@/lib/data';
@@ -28,14 +29,98 @@ export default function CheckoutPage() {
   const [newAddr, setNewAddr] = useState<Partial<Address>>({ name: '', phone: '', line1: '', city: '', state: '', pincode: '', is_default: true });
   const [savingAddr, setSavingAddr] = useState(false);
 
-  const shippingFee = (subtotal >= STORE_CONFIG.freeShippingThreshold || isFreeShippingCoupon) ? 0 : STORE_CONFIG.defaultShippingFee;
+  // Dynamic Delhivery shipping calculation state
+  const [shippingRate, setShippingRate] = useState<number>(0);
+  const [isCalculatingShipping, setIsCalculatingShipping] = useState<boolean>(false);
+  const [shippingError, setShippingError] = useState<string>('');
+  const [shippingEstDays, setShippingEstDays] = useState<string>('2 – 4 business days');
+  const [shippingServiceable, setShippingServiceable] = useState<boolean | null>(null);
+
+  // Razorpay SDK loading state & retry key
+  const [rzpLoaded, setRzpLoaded] = useState(false);
+  const [rzpError, setRzpError] = useState(false);
+  const [scriptRetryKey, setScriptRetryKey] = useState(0);
 
   const [payLoading, setPayLoading] = useState(false);
   const [payError, setPayError] = useState('');
   const [stockError, setStockError] = useState('');
 
-  const finalTotal = Math.max(0, subtotal - discountAmount) + shippingFee;
+  // Check if Razorpay SDK already exists on window (e.g. cached or preloaded)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).Razorpay) {
+      setRzpLoaded(true);
+    }
+  }, []);
+
   const selectedAddress = addresses.find(a => a.id === selectedAddressId);
+  const activePincode = isAddingNew
+    ? (newAddr.pincode || '').trim()
+    : (selectedAddress?.pincode || '').trim();
+
+  // Calculate dynamic shipping whenever the destination pincode or cart items change
+  useEffect(() => {
+    if (!activePincode || !/^\d{6}$/.test(activePincode)) {
+      if (!activePincode) {
+        setShippingError('');
+        setShippingRate(0);
+        setShippingServiceable(null);
+      }
+      return;
+    }
+
+    let isMounted = true;
+    setIsCalculatingShipping(true);
+    setShippingError('');
+
+    const cartPayload = cart.map(i => ({
+      product: {
+        id: i.product.id,
+        weight_grams: i.product.weight_grams,
+        category: i.product.category,
+      },
+      quantity: i.quantity,
+      size: i.size,
+    }));
+
+    fetch('/api/delhivery/calculate-rate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        destination_pincode: activePincode,
+        items: cartPayload,
+      }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!isMounted) return;
+        if (data.success && data.isServiceable) {
+          setShippingRate(data.shippingFee);
+          setShippingEstDays(data.estimatedDays || '2 – 4 business days');
+          setShippingServiceable(true);
+          setShippingError('');
+        } else {
+          setShippingRate(0);
+          setShippingServiceable(false);
+          setShippingError(data.error || `Shipping is currently unavailable to pincode ${activePincode}.`);
+        }
+      })
+      .catch(err => {
+        if (!isMounted) return;
+        setShippingRate(0);
+        setShippingServiceable(false);
+        setShippingError('Unable to calculate shipping, please try again.');
+      })
+      .finally(() => {
+        if (isMounted) setIsCalculatingShipping(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activePincode, cart]);
+
+  const effectiveShippingFee = isFreeShippingCoupon ? 0 : shippingRate;
+  const finalTotal = Math.max(0, subtotal - discountAmount) + effectiveShippingFee;
 
   // Sync recipient name once user has hydrated
   useEffect(() => {
@@ -72,6 +157,16 @@ export default function CheckoutPage() {
   const handlePay = async () => {
     setPayError(''); setStockError('');
     if (!selectedAddress) { setPayError('Please select or add a delivery address.'); return; }
+    if (shippingError || shippingServiceable === false) {
+      setPayError(shippingError || 'Delivery is not available to the selected address pincode.');
+      return;
+    }
+    if (typeof window === 'undefined' || !(window as any).Razorpay) {
+      setPayError('Razorpay SDK is not ready yet. Please wait a moment or click Retry.');
+      setRzpError(true);
+      return;
+    }
+
     setPayLoading(true);
     try {
       // Pre-flight client-side stock check (UX convenience only — server re-checks)
@@ -94,21 +189,21 @@ export default function CheckoutPage() {
         size: i.size,
       }));
 
-      // Step 1: Create Razorpay order — server recalculates total from live DB prices
+      // Step 1: Create Razorpay order — server recalculates total & dynamic Delhivery shipping
       const orderRes = await fetch('/api/razorpay/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: cartItems,
           coupon_code: coupon?.code || '',
-          shipping_fee: shippingFee,
+          shipping_fee: effectiveShippingFee,
           user_id: user?.id || '',
           shipping_address: selectedAddress,
         }),
       });
       const orderData = await orderRes.json();
       if (!orderData.success) {
-        setPayError('Failed to create payment: ' + orderData.message);
+        setPayError('Failed to create payment: ' + (orderData.message || 'Error occurred'));
         setPayLoading(false);
         return;
       }
@@ -131,7 +226,7 @@ export default function CheckoutPage() {
               subtotal,
               discount_amount: discountAmount,
               coupon_code: coupon?.code || '',
-              shipping_fee: shippingFee,
+              shipping_fee: effectiveShippingFee,
               total: serverTotal,
               shipping_address: selectedAddress,
             },
@@ -184,7 +279,8 @@ export default function CheckoutPage() {
         });
         rzp.open();
       } else {
-        setPayError('Razorpay SDK failed to load. Please check your connection.');
+        setPayError('Razorpay SDK failed to load. Please click Retry below.');
+        setRzpError(true);
         setPayLoading(false);
       }
     } catch (e: any) {
@@ -214,17 +310,60 @@ export default function CheckoutPage() {
     );
   }
 
+  const isPayDisabled =
+    payLoading ||
+    !selectedAddress ||
+    isCalculatingShipping ||
+    !!shippingError ||
+    shippingServiceable === false ||
+    !rzpLoaded ||
+    rzpError;
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-8">
+      {/* Razorpay Checkout Official SDK script loaded via Next.js Script */}
+      <Script
+        id="razorpay-checkout-sdk"
+        key={`rzp-sdk-${scriptRetryKey}`}
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        strategy="afterInteractive"
+        onLoad={() => {
+          console.info('[Razorpay SDK] Loaded successfully');
+          setRzpLoaded(true);
+          setRzpError(false);
+        }}
+        onError={(e) => {
+          console.error('[Razorpay SDK Load Error]', e);
+          setRzpError(true);
+          setPayError('Failed to load Razorpay payment SDK. Please click Retry below.');
+        }}
+      />
+
       <div>
         <p className="text-xs text-zinc-500 mb-1">Checkout</p>
         <h1 className="text-3xl font-serif font-bold text-zinc-900">Complete Your Order</h1>
       </div>
 
       {payError && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-800 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <span>{payError}</span>
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600" />
+            <span>{payError}</span>
+          </div>
+          {rzpError && (
+            <button
+              type="button"
+              onClick={() => {
+                setRzpError(false);
+                setPayError('');
+                setScriptRetryKey(k => k + 1);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-900 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors w-fit"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Loading Gateway</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -263,7 +402,7 @@ export default function CheckoutPage() {
                   className="mt-0.5 text-amber-800 focus:ring-amber-700" />
                 <div className="text-xs space-y-0.5 flex-1">
                   <p className="font-bold text-zinc-900">{addr.name} <span className="font-normal text-zinc-500">({addr.phone})</span></p>
-                  <p className="text-zinc-600">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.state} – <span className="font-mono font-bold">{addr.pincode}</span></p>
+                  <p className="text-zinc-600">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.state} – <span className="font-mono font-bold text-amber-900">{addr.pincode}</span></p>
                 </div>
               </label>
             ))}
@@ -294,24 +433,59 @@ export default function CheckoutPage() {
 
           {/* Shipping */}
           <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm">
-            <div className="flex items-center gap-2 border-b border-zinc-100 pb-3 mb-4">
-              <Truck className="w-5 h-5 text-amber-800" />
-              <h3 className="font-serif font-bold text-lg text-zinc-900">2. Shipping Details</h3>
-            </div>
-            <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200 flex items-center justify-between text-xs">
-              <div className="space-y-1">
-                <p className="font-bold text-zinc-900">Express Courier Delivery</p>
-                <p className="text-zinc-500">Flat rate delivery to any location in India</p>
-                <p className="text-amber-800 font-medium text-[11px]">Est. delivery: 2 – 4 business days</p>
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Truck className="w-5 h-5 text-amber-800" />
+                <h3 className="font-serif font-bold text-lg text-zinc-900">2. Shipping Details</h3>
               </div>
-              <div className="text-right">
-                {shippingFee === 0 ? (
-                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded uppercase">Free</span>
-                ) : (
-                  <span className="text-base font-extrabold text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{shippingFee}</span>
-                )}
-              </div>
+              <span className="text-[11px] font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
+                Origin: Dharmapuri (635701)
+              </span>
             </div>
+
+            {isCalculatingShipping ? (
+              <div className="p-4 bg-amber-50/60 rounded-xl border border-amber-200 flex items-center gap-3 text-xs text-amber-900">
+                <Loader2 className="w-4 h-4 animate-spin text-amber-800 flex-shrink-0" />
+                <div>
+                  <p className="font-bold">Calculating shipping cost...</p>
+                  <p className="text-[11px] text-amber-700">Fetching live courier rates for pincode {activePincode}</p>
+                </div>
+              </div>
+            ) : shippingError ? (
+              <div className="p-4 bg-red-50 rounded-xl border border-red-200 flex items-start gap-3 text-xs text-red-800">
+                <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Shipping Unavailable</p>
+                  <p className="text-red-700">{shippingError}</p>
+                </div>
+              </div>
+            ) : activePincode && shippingServiceable ? (
+              <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200 flex items-center justify-between text-xs">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-zinc-900">Delhivery Express Delivery</p>
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200/60">Serviceable</span>
+                  </div>
+                  <p className="text-zinc-500">Delivering to pincode <span className="font-mono font-bold text-zinc-800">{activePincode}</span></p>
+                  <p className="text-amber-800 font-medium text-[11px]">Est. delivery: {shippingEstDays}</p>
+                </div>
+                <div className="text-right">
+                  {isFreeShippingCoupon ? (
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded uppercase">Free</span>
+                      {shippingRate > 0 && <p className="text-[10px] text-zinc-400 line-through">₹{shippingRate}</p>}
+                    </div>
+                  ) : (
+                    <span className="text-base font-extrabold text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{shippingRate}</span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-zinc-50 rounded-xl border border-dashed border-zinc-200 text-xs text-zinc-500 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                <span>Select or enter a delivery address above to calculate shipping to your pincode.</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -342,17 +516,55 @@ export default function CheckoutPage() {
               {discountAmount > 0 && <div className="flex justify-between text-emerald-700 font-semibold"><span>Discount ({coupon?.code})</span><span>-{STORE_CONFIG.defaultPricing.currency}{discountAmount}</span></div>}
               <div className="flex justify-between text-zinc-500">
                 <span>Shipping</span>
-                <span className="font-medium text-zinc-900">{shippingFee === 0 ? <span className="text-emerald-600 font-bold">Free</span> : `${STORE_CONFIG.defaultPricing.currency}${shippingFee}`}</span>
+                <span className="font-medium text-zinc-900">
+                  {isCalculatingShipping ? (
+                    <span className="text-zinc-500 italic flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin text-amber-700" />
+                      Calculating...
+                    </span>
+                  ) : shippingError ? (
+                    <span className="text-red-600 font-semibold text-[11px]">Unavailable</span>
+                  ) : isFreeShippingCoupon ? (
+                    <span className="text-emerald-600 font-bold">Free</span>
+                  ) : activePincode && shippingServiceable ? (
+                    `${STORE_CONFIG.defaultPricing.currency}${shippingRate}`
+                  ) : (
+                    <span className="text-zinc-400">At address</span>
+                  )}
+                </span>
               </div>
               <div className="pt-2.5 border-t border-zinc-200 flex justify-between font-extrabold text-zinc-900 text-sm">
                 <span>Total</span>
-                <span className="text-xl text-amber-900">{STORE_CONFIG.defaultPricing.currency}{finalTotal.toLocaleString()}</span>
+                <span className="text-xl text-amber-900">
+                  {isCalculatingShipping ? (
+                    <span className="text-sm font-medium text-zinc-400 italic">Calculating...</span>
+                  ) : (
+                    `${STORE_CONFIG.defaultPricing.currency}${finalTotal.toLocaleString()}`
+                  )}
+                </span>
               </div>
             </div>
 
-            <button onClick={handlePay} disabled={payLoading || !selectedAddress}
-              className="w-full py-4 bg-amber-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-900 disabled:opacity-50 transition-colors shadow-lg flex items-center justify-center gap-2">
-              {payLoading ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Processing...</span></> : <><CreditCard className="w-4 h-4" /><span>Pay {STORE_CONFIG.defaultPricing.currency}{finalTotal.toLocaleString()} via Razorpay</span></>}
+            <button
+              onClick={handlePay}
+              disabled={isPayDisabled}
+              className="w-full py-4 bg-amber-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-900 disabled:opacity-50 transition-colors shadow-lg flex items-center justify-center gap-2"
+            >
+              {payLoading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /><span>Processing...</span></>
+              ) : isCalculatingShipping ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /><span>Calculating Shipping...</span></>
+              ) : shippingError ? (
+                <span>Shipping Unavailable</span>
+              ) : !selectedAddress ? (
+                <span>Select Address to Continue</span>
+              ) : rzpError ? (
+                <span>Gateway Failed (Click Retry Above)</span>
+              ) : !rzpLoaded ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /><span>Initializing Payment Gateway...</span></>
+              ) : (
+                <><CreditCard className="w-4 h-4" /><span>Pay {STORE_CONFIG.defaultPricing.currency}{finalTotal.toLocaleString()} via Razorpay</span></>
+              )}
             </button>
             <p className="text-[11px] text-zinc-400 text-center">UPI · Cards · Netbanking · Wallets · EMI</p>
           </div>

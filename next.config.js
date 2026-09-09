@@ -65,7 +65,7 @@ const nextConfig = {
               // 'self' covers /_next/image which Next.js uses for optimized local images
               "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in https://checkout.razorpay.com https://lh3.googleusercontent.com",
               "connect-src 'self' https://*.supabase.co https://*.supabase.in https://api.razorpay.com https://checkout.razorpay.com https://wa.me",
-              "frame-src https://checkout.razorpay.com api.razorpay.com",
+              "frame-src 'self' https://checkout.razorpay.com https://api.razorpay.com",
               "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self'",

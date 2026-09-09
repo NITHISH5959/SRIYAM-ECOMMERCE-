@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { createOrderLimiter, getClientIp } from '@/lib/rate-limit';
 import { getProducts, getVariantsByIds, validateCouponCode } from '@/lib/data';
 import { STORE_CONFIG } from '@/lib/config';
+import { calculateDelhiveryRate, calculateTotalCartWeightGrams } from '@/lib/delhivery';
 
 /**
  * POST /api/razorpay/create-order
@@ -139,11 +140,40 @@ export async function POST(request: Request) {
       // verify-payment will also not apply it, so no discount will be applied.
     }
 
-    // ── 4. Calculate shipping server-side ──────────────────────────────────
-    // Flat ₹50 shipping fee unless subtotal >= freeShippingThreshold (999) or free_shipping coupon is applied.
+    // ── 4. Calculate dynamic Delhivery shipping server-side ───────────────
     let calculatedShipping = 0;
-    if (calculatedSubtotal < STORE_CONFIG.freeShippingThreshold && !isFreeShipping) {
-      calculatedShipping = STORE_CONFIG.defaultShippingFee;
+    if (!isFreeShipping) {
+      const destPin = (shipping_address?.pincode || '').trim();
+      if (!destPin || !/^\d{6}$/.test(destPin)) {
+        return NextResponse.json(
+          { success: false, message: 'Please provide a valid 6-digit delivery pincode.' },
+          { status: 400 }
+        );
+      }
+
+      // Compute total weight from verified items
+      const totalWeight = calculateTotalCartWeightGrams(
+        verifiedItems.map((item) => {
+          const prod = allProducts.find((p) => p.id === item.product_id);
+          return {
+            product: prod,
+            quantity: item.quantity,
+            size: item.size,
+          };
+        })
+      );
+
+      const rateResult = await calculateDelhiveryRate(destPin, totalWeight);
+      if (!rateResult.success || !rateResult.isServiceable) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: rateResult.error || `Shipping is currently unavailable to pincode ${destPin}.`,
+          },
+          { status: 400 }
+        );
+      }
+      calculatedShipping = rateResult.shippingFee;
     }
 
     // ── 5. Authoritative total ────────────────────────────────────────────
