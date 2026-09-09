@@ -27,7 +27,6 @@ const REQUIRED_SERVER_VARS: EnvVar[] = [
   { key: 'RAZORPAY_KEY_ID' },
   { key: 'RAZORPAY_KEY_SECRET' },
   { key: 'RAZORPAY_WEBHOOK_SECRET', optional: true },
-  { key: 'DELHIVERY_API_TOKEN', optional: true },
 ];
 
 let validated = false;

@@ -5,74 +5,173 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { getAddresses, saveAddress, deleteAddress, setDefaultAddress } from '@/lib/data';
 import { Address } from '@/types';
+import { INDIAN_STATES, validateAddress } from '@/lib/shipping';
 import { MapPin, Plus, Trash2, Star, StarOff, Edit3, X, Loader2, Check, AlertTriangle } from 'lucide-react';
-
-const STATES = ['Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Delhi','Jammu & Kashmir','Ladakh','Puducherry','Chandigarh'];
 
 function AddressForm({ initial, onSave, onCancel }: { initial?: Partial<Address>; onSave: (a: Partial<Address>) => void; onCancel: () => void; }) {
   const [form, setForm] = useState<Partial<Address>>(initial || { name: '', phone: '', line1: '', line2: '', city: '', state: 'Tamil Nadu', pincode: '', is_default: false });
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  const handleChange = (field: string, value: any) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => {
+        const copy = { ...prev };
+        delete copy[field];
+        return copy;
+      });
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const val = validateAddress(form);
+    if (!val.valid) {
+      setErrors(val.errors);
+      return;
+    }
+    setErrors({});
     setSaving(true);
     await onSave(form);
     setSaving(false);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="border border-amber-200 bg-amber-50/30 rounded-2xl p-5 space-y-4">
+    <form onSubmit={handleSubmit} noValidate className="border border-amber-200 bg-amber-50/30 rounded-2xl p-5 space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {[['Full Name *', 'name', 'text', 'Sriram R.'], ['Phone *', 'phone', 'tel', '+91 98765 43210']].map(([label, field, type, ph]) => (
-          <div key={field} className="space-y-1">
-            <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">{label}</label>
-            <input type={type} required value={(form as any)[field] || ''} placeholder={ph}
-              onChange={e => setForm({ ...form, [field]: e.target.value })}
-              className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
-          </div>
-        ))}
+        {/* Full Name */}
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">Full Name *</label>
+          <input
+            type="text"
+            value={form.name || ''}
+            placeholder="Sriram R."
+            onChange={e => handleChange('name', e.target.value)}
+            className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none ${
+              errors.name ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+            }`}
+          />
+          {errors.name && <p className="text-[11px] text-red-600 font-medium">{errors.name}</p>}
+        </div>
+
+        {/* Phone Number */}
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">Phone Number (10 digits) *</label>
+          <input
+            type="tel"
+            maxLength={10}
+            value={form.phone || ''}
+            placeholder="9876543210"
+            onChange={e => handleChange('phone', e.target.value.replace(/\D/g, ''))}
+            className={`w-full border rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:outline-none ${
+              errors.phone ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+            }`}
+          />
+          {errors.phone && <p className="text-[11px] text-red-600 font-medium">{errors.phone}</p>}
+        </div>
       </div>
+
+      {/* Address Line 1 */}
       <div className="space-y-1">
         <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">Address Line 1 *</label>
-        <input type="text" required value={form.line1 || ''} placeholder="House/Flat, Street, Area"
-          onChange={e => setForm({ ...form, line1: e.target.value })}
-          className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+        <input
+          type="text"
+          value={form.line1 || ''}
+          placeholder="House/Flat No., Building, Street, Area"
+          onChange={e => handleChange('line1', e.target.value)}
+          className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none ${
+            errors.line1 ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+          }`}
+        />
+        {errors.line1 && <p className="text-[11px] text-red-600 font-medium">{errors.line1}</p>}
       </div>
+
+      {/* Address Line 2 */}
       <div className="space-y-1">
-        <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">Address Line 2</label>
-        <input type="text" value={form.line2 || ''} placeholder="Landmark (optional)"
-          onChange={e => setForm({ ...form, line2: e.target.value })}
-          className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+        <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">Address Line 2 (Optional)</label>
+        <input
+          type="text"
+          value={form.line2 || ''}
+          placeholder="Landmark, Suite, etc."
+          onChange={e => handleChange('line2', e.target.value)}
+          className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none"
+        />
       </div>
-      <div className="grid grid-cols-3 gap-3">
-        <div className="space-y-1 col-span-1">
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* City */}
+        <div className="space-y-1">
           <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">City *</label>
-          <input type="text" required value={form.city || ''} placeholder="Chennai"
-            onChange={e => setForm({ ...form, city: e.target.value })}
-            className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+          <input
+            type="text"
+            value={form.city || ''}
+            placeholder="Chennai"
+            onChange={e => handleChange('city', e.target.value)}
+            className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none ${
+              errors.city ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+            }`}
+          />
+          {errors.city && <p className="text-[11px] text-red-600 font-medium">{errors.city}</p>}
         </div>
-        <div className="space-y-1 col-span-1">
+
+        {/* State */}
+        <div className="space-y-1">
           <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">State *</label>
-          <select required value={form.state || 'Tamil Nadu'} onChange={e => setForm({ ...form, state: e.target.value })}
-            className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none bg-white">
-            {STATES.map(s => <option key={s}>{s}</option>)}
+          <select
+            value={form.state || 'Tamil Nadu'}
+            onChange={e => handleChange('state', e.target.value)}
+            className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none bg-white ${
+              errors.state ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+            }`}
+          >
+            {INDIAN_STATES.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
           </select>
+          {errors.state && <p className="text-[11px] text-red-600 font-medium">{errors.state}</p>}
         </div>
-        <div className="space-y-1 col-span-1">
-          <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">Pincode *</label>
-          <input type="text" required pattern="\d{6}" maxLength={6} value={form.pincode || ''} placeholder="600001"
-            onChange={e => setForm({ ...form, pincode: e.target.value })}
-            className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+
+        {/* Pincode */}
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-zinc-700 uppercase tracking-wide">Pincode (6 digits) *</label>
+          <input
+            type="text"
+            maxLength={6}
+            value={form.pincode || ''}
+            placeholder="600001"
+            onChange={e => handleChange('pincode', e.target.value.replace(/\D/g, ''))}
+            className={`w-full border rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:outline-none ${
+              errors.pincode ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+            }`}
+          />
+          {errors.pincode && <p className="text-[11px] text-red-600 font-medium">{errors.pincode}</p>}
         </div>
       </div>
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" checked={!!form.is_default} onChange={e => setForm({ ...form, is_default: e.target.checked })}
-          className="text-amber-800 rounded" />
+
+      <label className="flex items-center gap-2 cursor-pointer pt-1">
+        <input
+          type="checkbox"
+          checked={!!form.is_default}
+          onChange={e => handleChange('is_default', e.target.checked)}
+          className="text-amber-800 rounded focus:ring-amber-700"
+        />
         <span className="text-xs font-semibold text-zinc-700">Set as default address</span>
       </label>
+
       <div className="flex justify-end gap-3 pt-1">
-        <button type="button" onClick={onCancel} className="px-4 py-2 border border-zinc-300 text-xs font-semibold rounded-lg flex items-center gap-1.5"><X className="w-3.5 h-3.5" />Cancel</button>
-        <button type="submit" disabled={saving} className="px-5 py-2.5 bg-amber-800 text-white font-bold text-xs uppercase rounded-lg flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 border border-zinc-300 text-xs font-semibold rounded-lg flex items-center gap-1.5 hover:bg-zinc-100 transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={saving}
+          className="px-5 py-2.5 bg-amber-800 text-white font-bold text-xs uppercase rounded-lg flex items-center gap-1.5 hover:bg-amber-900 transition-colors disabled:opacity-50"
+        >
           {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
           {saving ? 'Saving...' : 'Save Address'}
         </button>

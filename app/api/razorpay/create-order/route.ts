@@ -4,7 +4,8 @@ import crypto from 'crypto';
 import { createOrderLimiter, getClientIp } from '@/lib/rate-limit';
 import { getProducts, getVariantsByIds, validateCouponCode } from '@/lib/data';
 import { STORE_CONFIG } from '@/lib/config';
-import { calculateDelhiveryRate, calculateTotalCartWeightGrams } from '@/lib/delhivery';
+import { calculateShippingFee, validateAddress } from '@/lib/shipping';
+import { Address } from '@/types';
 
 /**
  * POST /api/razorpay/create-order
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
       coupon_code?: string;
       shipping_fee: number;
       user_id: string;
-      shipping_address: { id?: string; pincode?: string };
+      shipping_address?: Partial<Address>;
     } = body;
 
     // ── Input validation ────────────────────────────────────────────────────
@@ -140,41 +141,21 @@ export async function POST(request: Request) {
       // verify-payment will also not apply it, so no discount will be applied.
     }
 
-    // ── 4. Calculate dynamic Delhivery shipping server-side ───────────────
-    let calculatedShipping = 0;
-    if (!isFreeShipping) {
-      const destPin = (shipping_address?.pincode || '').trim();
-      if (!destPin || !/^\d{6}$/.test(destPin)) {
+    // ── 4. Calculate authoritative state-based shipping server-side ────────
+    // Never trust client-supplied shipping fee.
+    // If state is Tamil Nadu -> ₹150; all other states -> ₹200; Free shipping coupon -> ₹0
+    if (shipping_address) {
+      const addrVal = validateAddress(shipping_address);
+      if (!addrVal.valid) {
+        const firstErr = Object.values(addrVal.errors)[0];
         return NextResponse.json(
-          { success: false, message: 'Please provide a valid 6-digit delivery pincode.' },
+          { success: false, message: `Invalid delivery address: ${firstErr}` },
           { status: 400 }
         );
       }
-
-      // Compute total weight from verified items
-      const totalWeight = calculateTotalCartWeightGrams(
-        verifiedItems.map((item) => {
-          const prod = allProducts.find((p) => p.id === item.product_id);
-          return {
-            product: prod,
-            quantity: item.quantity,
-            size: item.size,
-          };
-        })
-      );
-
-      const rateResult = await calculateDelhiveryRate(destPin, totalWeight);
-      if (!rateResult.success || !rateResult.isServiceable) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: rateResult.error || `Shipping is currently unavailable to pincode ${destPin}.`,
-          },
-          { status: 400 }
-        );
-      }
-      calculatedShipping = rateResult.shippingFee;
     }
+
+    const calculatedShipping = calculateShippingFee(shipping_address?.state, isFreeShipping);
 
     // ── 5. Authoritative total ────────────────────────────────────────────
     const calculatedTotal = Math.max(0, calculatedSubtotal - calculatedDiscount) + calculatedShipping;

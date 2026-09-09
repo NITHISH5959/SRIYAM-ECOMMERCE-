@@ -7,10 +7,11 @@ import Script from 'next/script';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
 import { getAddresses, saveAddress } from '@/lib/data';
+import { INDIAN_STATES, calculateShippingFee, validateAddress, isTamilNadu } from '@/lib/shipping';
 import { Address } from '@/types';
 import {
   MapPin, Truck, CreditCard, CheckCircle2, Plus, ArrowRight,
-  Lock, AlertTriangle, Loader2, RefreshCw,
+  Lock, AlertTriangle, Loader2, RefreshCw, X, Check,
 } from 'lucide-react';
 
 /**
@@ -60,15 +61,18 @@ export default function CheckoutPage() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState('');
   const [isAddingNew, setIsAddingNew] = useState(false);
-  const [newAddr, setNewAddr] = useState<Partial<Address>>({ name: '', phone: '', line1: '', city: '', state: '', pincode: '', is_default: true });
+  const [newAddr, setNewAddr] = useState<Partial<Address>>({
+    name: '',
+    phone: '',
+    line1: '',
+    line2: '',
+    city: '',
+    state: 'Tamil Nadu',
+    pincode: '',
+    is_default: true,
+  });
+  const [addrErrors, setAddrErrors] = useState<Record<string, string>>({});
   const [savingAddr, setSavingAddr] = useState(false);
-
-  // Dynamic Delhivery shipping calculation state
-  const [shippingRate, setShippingRate] = useState<number>(0);
-  const [isCalculatingShipping, setIsCalculatingShipping] = useState<boolean>(false);
-  const [shippingError, setShippingError] = useState<string>('');
-  const [shippingEstDays, setShippingEstDays] = useState<string>('2 – 4 business days');
-  const [shippingServiceable, setShippingServiceable] = useState<boolean | null>(null);
 
   // Razorpay SDK loading state & retry key
   const [rzpLoaded, setRzpLoaded] = useState(false);
@@ -89,89 +93,28 @@ export default function CheckoutPage() {
     });
   }, [scriptRetryKey]);
 
-  const selectedAddress = addresses.find(a => a.id === selectedAddressId);
-  const activePincode = isAddingNew
-    ? (newAddr.pincode || '').trim()
-    : (selectedAddress?.pincode || '').trim();
+  // Selected address and active destination state for shipping
+  const selectedAddress = addresses.find((a) => a.id === selectedAddressId);
+  const activeState = isAddingNew ? newAddr.state : selectedAddress?.state;
 
-  // Calculate dynamic shipping whenever the destination pincode or cart items change
-  useEffect(() => {
-    if (!activePincode || !/^\d{6}$/.test(activePincode)) {
-      if (!activePincode) {
-        setShippingError('');
-        setShippingRate(0);
-        setShippingServiceable(null);
-      }
-      return;
-    }
-
-    let isMounted = true;
-    setIsCalculatingShipping(true);
-    setShippingError('');
-
-    const cartPayload = cart.map(i => ({
-      product: {
-        id: i.product.id,
-        weight_grams: i.product.weight_grams,
-        category: i.product.category,
-      },
-      quantity: i.quantity,
-      size: i.size,
-    }));
-
-    fetch('/api/delhivery/calculate-rate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        destination_pincode: activePincode,
-        items: cartPayload,
-      }),
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (!isMounted) return;
-        if (data.success && data.isServiceable) {
-          setShippingRate(data.shippingFee);
-          setShippingEstDays(data.estimatedDays || '2 – 4 business days');
-          setShippingServiceable(true);
-          setShippingError('');
-        } else {
-          setShippingRate(0);
-          setShippingServiceable(false);
-          setShippingError(data.error || `Shipping is currently unavailable to pincode ${activePincode}.`);
-        }
-      })
-      .catch(err => {
-        if (!isMounted) return;
-        setShippingRate(0);
-        setShippingServiceable(false);
-        setShippingError('Unable to calculate shipping, please try again.');
-      })
-      .finally(() => {
-        if (isMounted) setIsCalculatingShipping(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [activePincode, cart]);
-
+  // Instant state-based shipping calculation (₹150 for Tamil Nadu, ₹200 for other states, ₹0 for free shipping coupon)
+  const shippingRate = calculateShippingFee(activeState, isFreeShippingCoupon);
   const effectiveShippingFee = isFreeShippingCoupon ? 0 : shippingRate;
   const finalTotal = Math.max(0, subtotal - discountAmount) + effectiveShippingFee;
 
   // Sync recipient name once user has hydrated
   useEffect(() => {
     if (user?.name) {
-      setNewAddr(prev => ({ ...prev, name: prev.name || user.name }));
+      setNewAddr((prev) => ({ ...prev, name: prev.name || user.name }));
     }
   }, [user]);
 
   useEffect(() => {
     if (!user?.id) return;
-    getAddresses(user.id).then(addrs => {
+    getAddresses(user.id).then((addrs) => {
       setAddresses(addrs);
       if (addrs.length > 0) {
-        const def = addrs.find(a => a.is_default) || addrs[0];
+        const def = addrs.find((a) => a.is_default) || addrs[0];
         setSelectedAddressId(def.id);
       } else {
         setIsAddingNew(true);
@@ -179,23 +122,64 @@ export default function CheckoutPage() {
     });
   }, [user]);
 
+  const handleAddrChange = (field: string, value: any) => {
+    setNewAddr((prev) => ({ ...prev, [field]: value }));
+    if (addrErrors[field]) {
+      setAddrErrors((prev) => {
+        const copy = { ...prev };
+        delete copy[field];
+        return copy;
+      });
+    }
+  };
+
   const handleSaveAddr = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
+    const validation = validateAddress(newAddr);
+    if (!validation.valid) {
+      setAddrErrors(validation.errors);
+      return;
+    }
+
+    setAddrErrors({});
     setSavingAddr(true);
     try {
       const saved = await saveAddress({ ...newAddr, user_id: user.id });
-      setAddresses(prev => [...prev, saved]);
+      setAddresses((prev) => [...prev, saved]);
       setSelectedAddressId(saved.id);
       setIsAddingNew(false);
-    } finally { setSavingAddr(false); }
+      setNewAddr({
+        name: user.name || '',
+        phone: '',
+        line1: '',
+        line2: '',
+        city: '',
+        state: 'Tamil Nadu',
+        pincode: '',
+        is_default: false,
+      });
+    } catch (err: any) {
+      setPayError(err.message || 'Failed to save delivery address.');
+    } finally {
+      setSavingAddr(false);
+    }
   };
 
   const handlePay = async () => {
-    setPayError(''); setStockError('');
-    if (!selectedAddress) { setPayError('Please select or add a delivery address.'); return; }
-    if (shippingError || shippingServiceable === false) {
-      setPayError(shippingError || 'Delivery is not available to the selected address pincode.');
+    setPayError('');
+    setStockError('');
+    if (!selectedAddress) {
+      setPayError('Please select or add a delivery address.');
+      return;
+    }
+
+    // Validate delivery address fields
+    const addrVal = validateAddress(selectedAddress);
+    if (!addrVal.valid) {
+      const firstErr = Object.values(addrVal.errors)[0];
+      setPayError(`Delivery address error: ${firstErr}`);
       return;
     }
 
@@ -219,15 +203,15 @@ export default function CheckoutPage() {
       // 2. Pre-flight client-side stock check
       for (const item of cart) {
         if (item.product.stock < item.quantity) {
-          const label = item.size ? `"${item.product.name}" (${item.size})` : `"${item.product.name}"`;
-          setStockError(`${label} only has ${item.product.stock} unit(s) left. Please update your cart.`);
+          const sizeLabel = item.size ? ` (${item.size})` : '';
+          setStockError(`"${item.product.name}${sizeLabel}" only has ${item.product.stock} unit(s) in stock. Please update your cart.`);
           setPayLoading(false);
           return;
         }
       }
 
-      // 3. Build cart items
-      const cartItems = cart.map(i => ({
+      // 3. Build cart item payload
+      const cartItems = cart.map((i) => ({
         product_id: i.product.id,
         name: i.product.name,
         quantity: i.quantity,
@@ -295,7 +279,7 @@ export default function CheckoutPage() {
           }
         } catch (vErr: any) {
           console.error('[verify-payment Client Error]', vErr);
-          setPayError("Payment verification could not be completed. Please check your connection or contact support.");
+          setPayError('Payment verification could not be completed. Please check your connection or contact support.');
           setPayLoading(false);
         }
       };
@@ -310,7 +294,6 @@ export default function CheckoutPage() {
       if (customerEmail && customerEmail.includes('@')) {
         prefillData.email = customerEmail;
       }
-      // Razorpay requires exact 10 digits for Indian contact numbers (no spaces, +, or dashes)
       const digitsOnlyPhone = (selectedAddress.phone || '').replace(/\D/g, '');
       if (digitsOnlyPhone.length >= 10) {
         prefillData.contact = digitsOnlyPhone.slice(-10);
@@ -359,24 +342,16 @@ export default function CheckoutPage() {
         setPayError(msg);
         setPayLoading(false);
       });
+
       rzp.open();
-    } catch (e: any) {
-      console.error('[Checkout Pay Initialization Error]', e);
-      setPayError(e.message || "Payment didn't go through. Please try again.");
+    } catch (err: any) {
+      console.error('[handlePay error]', err);
+      setPayError(err.message || 'Something went wrong initializing payment. Please try again.');
       setPayLoading(false);
     }
   };
 
-  if (!cartLoaded) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-20 text-center text-xs text-zinc-500 flex items-center justify-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin text-amber-800" />
-        <span>Loading checkout...</span>
-      </div>
-    );
-  }
-
-  if (cart.length === 0) {
+  if (cartLoaded && cart.length === 0) {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4">
         <h1 className="text-2xl font-serif font-bold text-zinc-900">Your Cart is Empty</h1>
@@ -388,12 +363,7 @@ export default function CheckoutPage() {
     );
   }
 
-  const isPayDisabled =
-    payLoading ||
-    !selectedAddress ||
-    isCalculatingShipping ||
-    !!shippingError ||
-    shippingServiceable === false;
+  const isPayDisabled = payLoading || !selectedAddress;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-8">
@@ -430,7 +400,7 @@ export default function CheckoutPage() {
                 onClick={() => {
                   setRzpError(false);
                   setPayError('');
-                  setScriptRetryKey(k => k + 1);
+                  setScriptRetryKey((k) => k + 1);
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-900 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors"
               >
@@ -461,7 +431,9 @@ export default function CheckoutPage() {
             <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0" />
             <span>{stockError}</span>
           </div>
-          <Link href="/cart" className="font-bold underline text-amber-900 ml-2 whitespace-nowrap">Edit Cart</Link>
+          <Link href="/cart" className="font-bold underline text-amber-900 ml-2 whitespace-nowrap">
+            Edit Cart
+          </Link>
         </div>
       )}
 
@@ -476,42 +448,181 @@ export default function CheckoutPage() {
                 1. Delivery Address
               </h3>
               {!isAddingNew && (
-                <button onClick={() => setIsAddingNew(true)} className="text-xs font-bold text-amber-800 hover:underline flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setIsAddingNew(true)}
+                  className="text-xs font-bold text-amber-800 hover:underline flex items-center gap-1"
+                >
                   <Plus className="w-3.5 h-3.5" />Add New
                 </button>
               )}
             </div>
 
             {/* Address List */}
-            {!isAddingNew && addresses.map(addr => (
-              <label key={addr.id} className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${selectedAddressId === addr.id ? 'border-amber-700 bg-amber-50/40 ring-1 ring-amber-700' : 'border-zinc-200 hover:border-zinc-300'}`}>
-                <input type="radio" name="address" checked={selectedAddressId === addr.id}
-                  onChange={() => setSelectedAddressId(addr.id)}
-                  className="mt-0.5 text-amber-800 focus:ring-amber-700" />
-                <div className="text-xs space-y-0.5 flex-1">
-                  <p className="font-bold text-zinc-900">{addr.name} <span className="font-normal text-zinc-500">({addr.phone})</span></p>
-                  <p className="text-zinc-600">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.state} – <span className="font-mono font-bold text-amber-900">{addr.pincode}</span></p>
-                </div>
-              </label>
-            ))}
+            {!isAddingNew && addresses.map((addr) => {
+              const isSelected = selectedAddressId === addr.id;
+              const isTN = isTamilNadu(addr.state);
+              return (
+                <label
+                  key={addr.id}
+                  className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+                    isSelected
+                      ? 'border-amber-700 bg-amber-50/40 ring-1 ring-amber-700'
+                      : 'border-zinc-200 hover:border-zinc-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="address"
+                    checked={isSelected}
+                    onChange={() => setSelectedAddressId(addr.id)}
+                    className="mt-0.5 text-amber-800 focus:ring-amber-700"
+                  />
+                  <div className="text-xs space-y-0.5 flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-zinc-900">
+                        {addr.name} <span className="font-normal text-zinc-500">({addr.phone})</span>
+                      </p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        isTN ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
+                      }`}>
+                        {isTN ? 'Tamil Nadu (₹150 ship)' : `${addr.state || 'Other State'} (₹200 ship)`}
+                      </span>
+                    </div>
+                    <p className="text-zinc-600">
+                      {addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.state} – <span className="font-mono font-bold text-amber-900">{addr.pincode}</span>
+                    </p>
+                  </div>
+                </label>
+              );
+            })}
 
             {/* Add New Address Form */}
             {isAddingNew && (
-              <form onSubmit={handleSaveAddr} className="space-y-3 pt-2">
-                <p className="text-xs font-bold text-zinc-800">Enter Delivery Address</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <input type="text" required placeholder="Full Name *" value={newAddr.name || ''} onChange={e => setNewAddr({ ...newAddr, name: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
-                  <input type="tel" required placeholder="Phone Number *" value={newAddr.phone || ''} onChange={e => setNewAddr({ ...newAddr, phone: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+              <form onSubmit={handleSaveAddr} noValidate className="space-y-3 pt-2 bg-amber-50/30 p-4 rounded-xl border border-amber-200/80">
+                <p className="text-xs font-bold text-zinc-900">Enter Delivery Address</p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Full Name */}
+                  <div className="space-y-1">
+                    <input
+                      type="text"
+                      placeholder="Full Name *"
+                      value={newAddr.name || ''}
+                      onChange={(e) => handleAddrChange('name', e.target.value)}
+                      className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none bg-white ${
+                        addrErrors.name ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+                      }`}
+                    />
+                    {addrErrors.name && <p className="text-[11px] text-red-600 font-medium">{addrErrors.name}</p>}
+                  </div>
+
+                  {/* Phone */}
+                  <div className="space-y-1">
+                    <input
+                      type="tel"
+                      maxLength={10}
+                      placeholder="Phone Number (10 digits) *"
+                      value={newAddr.phone || ''}
+                      onChange={(e) => handleAddrChange('phone', e.target.value.replace(/\D/g, ''))}
+                      className={`w-full border rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:outline-none bg-white ${
+                        addrErrors.phone ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+                      }`}
+                    />
+                    {addrErrors.phone && <p className="text-[11px] text-red-600 font-medium">{addrErrors.phone}</p>}
+                  </div>
                 </div>
-                <input type="text" required placeholder="Address Line 1 *" value={newAddr.line1 || ''} onChange={e => setNewAddr({ ...newAddr, line1: e.target.value })} className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
-                <div className="grid grid-cols-3 gap-3">
-                  <input type="text" required placeholder="City *" value={newAddr.city || ''} onChange={e => setNewAddr({ ...newAddr, city: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
-                  <input type="text" required placeholder="State *" value={newAddr.state || ''} onChange={e => setNewAddr({ ...newAddr, state: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
-                  <input type="text" required pattern="\d{6}" maxLength={6} placeholder="Pincode *" value={newAddr.pincode || ''} onChange={e => setNewAddr({ ...newAddr, pincode: e.target.value })} className="border border-zinc-300 rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+
+                {/* Address Line 1 */}
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    placeholder="Address Line 1 (House No., Building, Street) *"
+                    value={newAddr.line1 || ''}
+                    onChange={(e) => handleAddrChange('line1', e.target.value)}
+                    className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none bg-white ${
+                      addrErrors.line1 ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+                    }`}
+                  />
+                  {addrErrors.line1 && <p className="text-[11px] text-red-600 font-medium">{addrErrors.line1}</p>}
                 </div>
+
+                {/* Address Line 2 */}
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    placeholder="Address Line 2 (Landmark, Suite, etc. - Optional)"
+                    value={newAddr.line2 || ''}
+                    onChange={(e) => handleAddrChange('line2', e.target.value)}
+                    className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none bg-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* City */}
+                  <div className="space-y-1">
+                    <input
+                      type="text"
+                      placeholder="City *"
+                      value={newAddr.city || ''}
+                      onChange={(e) => handleAddrChange('city', e.target.value)}
+                      className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none bg-white ${
+                        addrErrors.city ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+                      }`}
+                    />
+                    {addrErrors.city && <p className="text-[11px] text-red-600 font-medium">{addrErrors.city}</p>}
+                  </div>
+
+                  {/* State */}
+                  <div className="space-y-1">
+                    <select
+                      value={newAddr.state || 'Tamil Nadu'}
+                      onChange={(e) => handleAddrChange('state', e.target.value)}
+                      className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none bg-white ${
+                        addrErrors.state ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+                      }`}
+                    >
+                      {INDIAN_STATES.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                    {addrErrors.state && <p className="text-[11px] text-red-600 font-medium">{addrErrors.state}</p>}
+                  </div>
+
+                  {/* Pincode */}
+                  <div className="space-y-1">
+                    <input
+                      type="text"
+                      maxLength={6}
+                      placeholder="Pincode (6 digits) *"
+                      value={newAddr.pincode || ''}
+                      onChange={(e) => handleAddrChange('pincode', e.target.value.replace(/\D/g, ''))}
+                      className={`w-full border rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:outline-none bg-white ${
+                        addrErrors.pincode ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
+                      }`}
+                    />
+                    {addrErrors.pincode && <p className="text-[11px] text-red-600 font-medium">{addrErrors.pincode}</p>}
+                  </div>
+                </div>
+
                 <div className="flex gap-2 justify-end pt-2">
-                  {addresses.length > 0 && <button type="button" onClick={() => setIsAddingNew(false)} className="px-4 py-2 border text-xs font-semibold rounded-lg">Cancel</button>}
-                  <button type="submit" disabled={savingAddr} className="px-5 py-2 bg-amber-800 text-white font-bold text-xs uppercase rounded-lg">
+                  {addresses.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddingNew(false);
+                        setAddrErrors({});
+                      }}
+                      className="px-4 py-2 border border-zinc-300 text-xs font-semibold rounded-lg hover:bg-zinc-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={savingAddr}
+                    className="px-5 py-2 bg-amber-800 text-white font-bold text-xs uppercase rounded-lg hover:bg-amber-900 transition-colors disabled:opacity-50"
+                  >
                     {savingAddr ? 'Saving...' : 'Save & Select'}
                   </button>
                 </div>
@@ -519,61 +630,58 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Shipping */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm">
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
+          {/* Shipping Details */}
+          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
               <div className="flex items-center gap-2">
                 <Truck className="w-5 h-5 text-amber-800" />
                 <h3 className="font-serif font-bold text-lg text-zinc-900">2. Shipping Details</h3>
               </div>
               <span className="text-[11px] font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
-                Origin: Dharmapuri (635701)
+                Origin: Dharmapuri, Tamil Nadu
               </span>
             </div>
 
-            {isCalculatingShipping ? (
-              <div className="p-4 bg-amber-50/60 rounded-xl border border-amber-200 flex items-center gap-3 text-xs text-amber-900">
-                <Loader2 className="w-4 h-4 animate-spin text-amber-800 flex-shrink-0" />
-                <div>
-                  <p className="font-bold">Calculating shipping cost...</p>
-                  <p className="text-[11px] text-amber-700">Fetching live courier rates for pincode {activePincode}</p>
+            <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200 flex items-center justify-between text-xs">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <p className="font-bold text-zinc-900">Express Courier Delivery</p>
+                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60">
+                    {isTamilNadu(activeState) ? 'Tamil Nadu Rate' : 'National Rate'}
+                  </span>
                 </div>
+                <p className="text-zinc-500">
+                  Delivering to: <span className="font-semibold text-zinc-800">{activeState || 'Tamil Nadu'}</span>
+                </p>
+                <p className="text-amber-800 font-medium text-[11px]">
+                  Estimated delivery: 2 – 4 business days
+                </p>
               </div>
-            ) : shippingError ? (
-              <div className="p-4 bg-red-50 rounded-xl border border-red-200 flex items-start gap-3 text-xs text-red-800">
-                <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">Shipping Unavailable</p>
-                  <p className="text-red-700">{shippingError}</p>
-                </div>
-              </div>
-            ) : activePincode && shippingServiceable ? (
-              <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200 flex items-center justify-between text-xs">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold text-zinc-900">Delhivery Express Delivery</p>
-                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200/60">Serviceable</span>
+
+              <div className="text-right">
+                {isFreeShippingCoupon ? (
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded uppercase border border-emerald-200">
+                      Free
+                    </span>
+                    <p className="text-[10px] text-zinc-400 line-through">₹{shippingRate}</p>
                   </div>
-                  <p className="text-zinc-500">Delivering to pincode <span className="font-mono font-bold text-zinc-800">{activePincode}</span></p>
-                  <p className="text-amber-800 font-medium text-[11px]">Est. delivery: {shippingEstDays}</p>
-                </div>
-                <div className="text-right">
-                  {isFreeShippingCoupon ? (
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded uppercase">Free</span>
-                      {shippingRate > 0 && <p className="text-[10px] text-zinc-400 line-through">₹{shippingRate}</p>}
-                    </div>
-                  ) : (
-                    <span className="text-base font-extrabold text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{shippingRate}</span>
-                  )}
-                </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    <span className="text-base font-extrabold text-zinc-900">
+                      {STORE_CONFIG.defaultPricing.currency}{shippingRate}
+                    </span>
+                    <p className="text-[10px] text-zinc-400">
+                      {isTamilNadu(activeState) ? '₹150 (TN)' : '₹200 (Other states)'}
+                    </p>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="p-4 bg-zinc-50 rounded-xl border border-dashed border-zinc-200 text-xs text-zinc-500 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                <span>Select or enter a delivery address above to calculate shipping to your pincode.</span>
-              </div>
-            )}
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-zinc-500 bg-amber-50/50 p-2.5 rounded-lg border border-amber-100">
+              <span>Standard delivery fee: <strong>₹150 for Tamil Nadu</strong> · <strong>₹200 for all other states</strong></span>
+            </div>
           </div>
         </div>
 
@@ -585,8 +693,12 @@ export default function CheckoutPage() {
               {cart.map(({ product, quantity, size }) => (
                 <div key={`${product.id}__${size || ''}`} className="flex justify-between items-center text-xs">
                   <div className="flex items-center gap-2">
-                    <div className="w-9 h-11 bg-amber-50 rounded border flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-amber-900">
-                      {product.images?.[0] ? <img src={product.images[0]} alt="" className="w-full h-full object-cover" /> : product.name.slice(0, 4)}
+                    <div className="w-9 h-11 bg-amber-50 rounded border flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-amber-900 overflow-hidden">
+                      {product.images?.[0] ? (
+                        <img src={product.images[0]} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        product.name.slice(0, 4)
+                      )}
                     </div>
                     <div>
                       <p className="font-semibold text-zinc-900 line-clamp-1 max-w-[140px]">{product.name}</p>
@@ -600,35 +712,30 @@ export default function CheckoutPage() {
             </div>
 
             <div className="space-y-2.5 pt-3 border-t border-zinc-100 text-xs">
-              <div className="flex justify-between text-zinc-500"><span>Subtotal</span><span className="font-medium text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{subtotal.toLocaleString()}</span></div>
-              {discountAmount > 0 && <div className="flex justify-between text-emerald-700 font-semibold"><span>Discount ({coupon?.code})</span><span>-{STORE_CONFIG.defaultPricing.currency}{discountAmount}</span></div>}
               <div className="flex justify-between text-zinc-500">
-                <span>Shipping</span>
+                <span>Subtotal</span>
+                <span className="font-medium text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{subtotal.toLocaleString()}</span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span>Discount ({coupon?.code})</span>
+                  <span>-{STORE_CONFIG.defaultPricing.currency}{discountAmount}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-zinc-500">
+                <span>Shipping ({activeState || 'Tamil Nadu'})</span>
                 <span className="font-medium text-zinc-900">
-                  {isCalculatingShipping ? (
-                    <span className="text-zinc-500 italic flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin text-amber-700" />
-                      Calculating...
-                    </span>
-                  ) : shippingError ? (
-                    <span className="text-red-600 font-semibold text-[11px]">Unavailable</span>
-                  ) : isFreeShippingCoupon ? (
+                  {isFreeShippingCoupon ? (
                     <span className="text-emerald-600 font-bold">Free</span>
-                  ) : activePincode && shippingServiceable ? (
-                    `${STORE_CONFIG.defaultPricing.currency}${shippingRate}`
                   ) : (
-                    <span className="text-zinc-400">At address</span>
+                    `${STORE_CONFIG.defaultPricing.currency}${shippingRate}`
                   )}
                 </span>
               </div>
               <div className="pt-2.5 border-t border-zinc-200 flex justify-between font-extrabold text-zinc-900 text-sm">
                 <span>Total</span>
                 <span className="text-xl text-amber-900">
-                  {isCalculatingShipping ? (
-                    <span className="text-sm font-medium text-zinc-400 italic">Calculating...</span>
-                  ) : (
-                    `${STORE_CONFIG.defaultPricing.currency}${finalTotal.toLocaleString()}`
-                  )}
+                  {STORE_CONFIG.defaultPricing.currency}{finalTotal.toLocaleString()}
                 </span>
               </div>
             </div>
@@ -639,15 +746,17 @@ export default function CheckoutPage() {
               className="w-full py-4 bg-amber-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-900 disabled:opacity-50 transition-colors shadow-lg flex items-center justify-center gap-2"
             >
               {payLoading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /><span>Processing Payment...</span></>
-              ) : isCalculatingShipping ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /><span>Calculating Shipping...</span></>
-              ) : shippingError ? (
-                <span>Shipping Unavailable</span>
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Processing Payment...</span>
+                </>
               ) : !selectedAddress ? (
-                <span>Select Address to Continue</span>
+                <span>Select Delivery Address</span>
               ) : (
-                <><CreditCard className="w-4 h-4" /><span>Pay {STORE_CONFIG.defaultPricing.currency}{finalTotal.toLocaleString()} via Razorpay</span></>
+                <>
+                  <CreditCard className="w-4 h-4" />
+                  <span>Pay {STORE_CONFIG.defaultPricing.currency}{finalTotal.toLocaleString()} via Razorpay</span>
+                </>
               )}
             </button>
             <p className="text-[11px] text-zinc-400 text-center">UPI · Cards · Netbanking · Wallets · EMI</p>

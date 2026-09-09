@@ -1,6 +1,7 @@
 import { Category, Product, ProductVariant, Coupon, Address, Order } from '@/types';
 import { createClient, isSupabaseConfigured } from './supabase/client';
 import { createAdminClient } from './supabase/admin';
+import { validateAddress } from './shipping';
 
 export const INITIAL_CATEGORIES: Category[] = [
   { id: '11111111-1111-1111-1111-111111111111', name: 'Frames', slug: 'frames' },
@@ -541,28 +542,55 @@ export async function getAddresses(userId: string): Promise<Address[]> {
 }
 
 export async function saveAddress(address: Partial<Address>): Promise<Address> {
+  const validation = validateAddress(address);
+  if (!validation.valid) {
+    const firstErr = Object.values(validation.errors)[0];
+    throw new Error(`Address validation failed: ${firstErr}`);
+  }
+
+  const cleanAddress: Partial<Address> = {
+    ...address,
+    name: (address.name || '').trim(),
+    phone: (address.phone || '').replace(/\D/g, ''),
+    line1: (address.line1 || '').trim(),
+    line2: (address.line2 || '').trim(),
+    city: (address.city || '').trim(),
+    state: (address.state || '').trim(),
+    pincode: (address.pincode || '').trim(),
+  };
+
   try {
     if (!isSupabaseConfigured()) throw new Error('not configured');
     const supabase = createClient();
-    if (address.id && !address.id.startsWith('addr')) {
-      const { data, error } = await supabase.from('addresses').update(address).eq('id', address.id).select().single();
+    if (cleanAddress.id && !cleanAddress.id.startsWith('addr')) {
+      const { data, error } = await supabase.from('addresses').update(cleanAddress).eq('id', cleanAddress.id).select().single();
       if (!error && data) return data as Address;
+      if (error) console.error('[saveAddress update error]', error);
     } else {
-      const { data, error } = await supabase.from('addresses').insert([address]).select().single();
+      const { data, error } = await supabase.from('addresses').insert([cleanAddress]).select().single();
       if (!error && data) return data as Address;
+      if (error) console.error('[saveAddress insert error]', error);
     }
-  } catch {}
-  const existing = address.id ? memoryAddresses.find(a => a.id === address.id) : null;
+  } catch (err) {
+    console.error('[saveAddress catch]', err);
+  }
+  const existing = cleanAddress.id ? memoryAddresses.find(a => a.id === cleanAddress.id) : null;
   if (existing) {
-    const idx = memoryAddresses.findIndex(a => a.id === address.id);
-    memoryAddresses[idx] = { ...existing, ...address } as Address;
+    const idx = memoryAddresses.findIndex(a => a.id === cleanAddress.id);
+    memoryAddresses[idx] = { ...existing, ...cleanAddress } as Address;
     return memoryAddresses[idx];
   }
   const newAddr: Address = {
-    id: address.id || `addr_${Date.now()}`, user_id: address.user_id || 'demo_user_id',
-    name: address.name || '', phone: address.phone || '', line1: address.line1 || '',
-    line2: address.line2 || '', city: address.city || '', state: address.state || '',
-    pincode: address.pincode || '', is_default: address.is_default || false,
+    id: cleanAddress.id || `addr_${Date.now()}`,
+    user_id: cleanAddress.user_id || 'demo_user_id',
+    name: cleanAddress.name || '',
+    phone: cleanAddress.phone || '',
+    line1: cleanAddress.line1 || '',
+    line2: cleanAddress.line2 || '',
+    city: cleanAddress.city || '',
+    state: cleanAddress.state || 'Tamil Nadu',
+    pincode: cleanAddress.pincode || '',
+    is_default: cleanAddress.is_default || false,
   };
   if (newAddr.is_default) memoryAddresses = memoryAddresses.map(a => ({ ...a, is_default: false }));
   memoryAddresses = [newAddr, ...memoryAddresses];

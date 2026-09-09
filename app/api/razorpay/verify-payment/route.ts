@@ -12,7 +12,7 @@ import {
 } from '@/lib/data';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { verifyPaymentLimiter, getClientIp } from '@/lib/rate-limit';
-import { calculateDelhiveryRate, calculateTotalCartWeightGrams } from '@/lib/delhivery';
+import { calculateShippingFee } from '@/lib/shipping';
 
 /**
  * POST /api/razorpay/verify-payment
@@ -162,28 +162,9 @@ export async function POST(request: Request) {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    // STEP 5 — VALIDATE SHIPPING (Delhivery Dynamic Calculation)
+    // STEP 5 — VALIDATE SHIPPING (State-based Calculation)
     // ════════════════════════════════════════════════════════════════════════
-    let calculatedShipping = 0;
-    if (!isFreeShipping) {
-      const destPin = (orderData.shipping_address?.pincode || '').trim();
-      if (destPin && /^\d{6}$/.test(destPin)) {
-        const totalWeight = calculateTotalCartWeightGrams(
-          verifiedItems.map((item) => {
-            const prod = allProducts.find((p) => p.id === item.product_id);
-            return {
-              product: prod,
-              quantity: item.quantity,
-              size: item.size,
-            };
-          })
-        );
-        const rateResult = await calculateDelhiveryRate(destPin, totalWeight);
-        calculatedShipping = rateResult.success ? rateResult.shippingFee : (orderData.shipping_fee || 0);
-      } else {
-        calculatedShipping = orderData.shipping_fee || 0;
-      }
-    }
+    const calculatedShipping = calculateShippingFee(orderData.shipping_address?.state, isFreeShipping);
 
     const calculatedTotal =
       Math.max(0, calculatedSubtotal - calculatedDiscount) + calculatedShipping;
