@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Product, ProductVariant } from '@/types';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
-import PlaceholderImage from '../ui/PlaceholderImage';
+import ImageSlider from './ImageSlider';
 import Image from 'next/image';
+import PlaceholderImage from '../ui/PlaceholderImage';
 import {
   ShoppingBag,
   Plus,
@@ -14,8 +15,6 @@ import {
   Truck,
   ShieldCheck,
   MessageCircle,
-  ChevronLeft,
-  ChevronRight,
   Layers,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -32,7 +31,6 @@ export default function ProductDetailClient({
 }: ProductDetailClientProps) {
   const { addToCart } = useCart();
   const [quantity, setQuantity] = useState(1);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   // ── Variant / size selection (Frames only) ────────────────────────────────
   const isFrame = product.category?.slug === 'frames';
@@ -52,52 +50,6 @@ export default function ProductDetailClient({
     compareAtPrice > price
       ? Math.round(((compareAtPrice - price) / compareAtPrice) * 100)
       : 0;
-
-  const hasImages = product.images && product.images.length > 0 && product.images[0].trim() !== '';
-  const totalImages = hasImages ? product.images.length : 0;
-  const multiImage = totalImages > 1;
-
-  // ── Navigation helpers ──────────────────────────────────────────────────────
-  const goToPrev = useCallback(() => {
-    setSelectedImageIndex((i) => (i > 0 ? i - 1 : totalImages - 1));
-  }, [totalImages]);
-
-  const goToNext = useCallback(() => {
-    setSelectedImageIndex((i) => (i < totalImages - 1 ? i + 1 : 0));
-  }, [totalImages]);
-
-  // ── Keyboard navigation ─────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!multiImage) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') goToPrev();
-      if (e.key === 'ArrowRight') goToNext();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [multiImage, goToPrev, goToNext]);
-
-  // ── Touch / Swipe support ───────────────────────────────────────────────────
-  const touchStartX = useRef<number | null>(null);
-  const touchStartY = useRef<number | null>(null);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartX.current === null || touchStartY.current === null || !multiImage) return;
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
-    const dy = e.changedTouches[0].clientY - touchStartY.current;
-    // Only trigger swipe if horizontal movement dominates (avoids conflict with page scroll)
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
-      if (dx < 0) goToNext();
-      else goToPrev();
-    }
-    touchStartX.current = null;
-    touchStartY.current = null;
-  };
 
   // ── Add to cart handler ─────────────────────────────────────────────────────
   const handleAddToCart = () => {
@@ -137,105 +89,22 @@ export default function ProductDetailClient({
       {/* Main Product Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14">
         {/* Left Column: Image Gallery */}
-        <div className="lg:col-span-7 space-y-4">
-          {/* Main Image */}
-          <div
-            className="bg-zinc-50 border border-zinc-200 rounded-2xl overflow-hidden aspect-[4/5] relative"
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
-            {hasImages ? (
-              <Image
-                src={product.images[selectedImageIndex]}
-                alt={product.name}
-                fill
-                sizes="(max-width: 768px) 100vw, 58vw"
-                className="object-cover"
-                unoptimized={
-                  product.images[selectedImageIndex].startsWith('blob:') ||
-                  product.images[selectedImageIndex].startsWith('data:')
-                }
-                priority
-              />
-            ) : (
-              <PlaceholderImage
-                title={product.name}
-                category={product.category?.name || 'Sacred Art'}
-                className="h-full"
-              />
-            )}
-
-            {/* Discount badge */}
-            {discountPercentage > 0 && (
-              <span className="absolute top-4 left-4 bg-amber-700 text-white text-xs font-bold px-3 py-1 rounded-md uppercase tracking-wider shadow-md">
+        <div className="lg:col-span-7 space-y-1">
+          {/* Discount badge sits above the slider */}
+          {discountPercentage > 0 && (
+            <div className="mb-2">
+              <span className="inline-block bg-amber-700 text-white text-xs font-bold px-3 py-1 rounded-md uppercase tracking-wider shadow-sm">
                 {discountPercentage}% OFF
               </span>
-            )}
-
-            {/* Left / Right arrow buttons (desktop) — only when multiple images */}
-            {multiImage && (
-              <>
-                <button
-                  onClick={goToPrev}
-                  aria-label="Previous image"
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 border border-zinc-200 text-zinc-700 hover:bg-white hover:text-zinc-900 flex items-center justify-center shadow-sm transition-colors"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={goToNext}
-                  aria-label="Next image"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 border border-zinc-200 text-zinc-700 hover:bg-white hover:text-zinc-900 flex items-center justify-center shadow-sm transition-colors"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-
-                {/* Dot indicator */}
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
-                  {product.images.map((_, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setSelectedImageIndex(idx)}
-                      aria-label={`Go to image ${idx + 1}`}
-                      className={`rounded-full transition-all ${
-                        selectedImageIndex === idx
-                          ? 'w-4 h-1.5 bg-amber-700'
-                          : 'w-1.5 h-1.5 bg-white/60 hover:bg-white/90'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Thumbnail strip — only when multiple images */}
-          {multiImage && (
-            <div className="flex items-center gap-3 overflow-x-auto pb-2">
-              {product.images.map((img, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setSelectedImageIndex(idx)}
-                  aria-label={`View image ${idx + 1}`}
-                  className={`flex-shrink-0 w-20 h-24 rounded-lg overflow-hidden border-2 transition-all relative ${
-                    selectedImageIndex === idx
-                      ? 'border-amber-700 ring-2 ring-amber-700/20'
-                      : 'border-zinc-200 hover:border-zinc-300'
-                  }`}
-                >
-                  <Image
-                    src={img}
-                    alt=""
-                    fill
-                    sizes="80px"
-                    className="object-cover"
-                    unoptimized={img.startsWith('blob:') || img.startsWith('data:')}
-                    loading={idx === 0 ? 'eager' : 'lazy'}
-                  />
-                </button>
-              ))}
             </div>
           )}
+
+          {/* Animated image slider — handles single/multi images, swipe, arrows, dots, thumbnails */}
+          <ImageSlider
+            images={product.images || []}
+            productName={product.name}
+            category={product.category?.name}
+          />
         </div>
 
         {/* Right Column: Product Details & Purchase Actions */}
