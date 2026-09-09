@@ -2,6 +2,7 @@ import { Category, Product, ProductVariant, Coupon, Address, Order } from '@/typ
 import { createClient, isSupabaseConfigured } from './supabase/client';
 import { createAdminClient } from './supabase/admin';
 import { validateAddress } from './shipping';
+import { formatOrderNumber, isValidOrderNumber } from './orders';
 
 export const INITIAL_CATEGORIES: Category[] = [
   { id: '11111111-1111-1111-1111-111111111111', name: 'Frames', slug: 'frames' },
@@ -45,6 +46,12 @@ let memoryAddresses: Address[] = [
   { id: 'addr_1', user_id: 'demo_user_id', name: 'Sriram Ramanathan', phone: '+91 98765 43210', line1: '42 South Mada Street, Mylapore', line2: 'Near Kapaleeshwarar Temple', city: 'Chennai', state: 'Tamil Nadu', pincode: '600004', is_default: true },
 ];
 export let memoryOrders: Order[] = [];
+let memoryOrderSeq = 0;
+
+export function getNextMemoryOrderNumber(): string {
+  memoryOrderSeq += 1;
+  return formatOrderNumber(memoryOrderSeq);
+}
 
 // ─── Categories ─────────────────────────────────────────────────────────────
 
@@ -620,6 +627,8 @@ export async function setDefaultAddress(id: string, userId: string): Promise<boo
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
+const ORDER_SELECT_FIELDS = 'id, order_number, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at';
+
 export async function createOrder(order: Partial<Order>): Promise<Order> {
   if (isSupabaseConfigured()) {
     // Trusted server action: use admin service_role client if available to bypass RLS, fallback to standard client
@@ -636,7 +645,7 @@ export async function createOrder(order: Partial<Order>): Promise<Order> {
       razorpay_payment_id: order.razorpay_payment_id,
     });
 
-    const { data, error } = await supabase.from('orders').insert([order]).select().single();
+    const { data, error } = await supabase.from('orders').insert([order]).select(ORDER_SELECT_FIELDS).single();
     if (error) {
       console.error('[createOrder] Supabase insert ERROR:', {
         code: error.code,
@@ -648,16 +657,22 @@ export async function createOrder(order: Partial<Order>): Promise<Order> {
       throw new Error(`Failed to save order to Supabase: ${error.message}`);
     }
     if (data) {
-      console.info('[createOrder] Order successfully created in Supabase with ID:', data.id);
-      memoryOrders.push(data as Order);
-      return data as Order;
+      const persistedOrder: Order = {
+        ...(data as any),
+        order_number: data.order_number || order.order_number || 'SRI001',
+      };
+      console.info('[createOrder] Order successfully created in Supabase with ID:', persistedOrder.id, 'and Order Number:', persistedOrder.order_number);
+      memoryOrders.push(persistedOrder);
+      return persistedOrder;
     }
   }
 
   // Fallback ONLY for local demo mode without Supabase credentials
   console.warn('[createOrder] Supabase not configured, saving to in-memory store');
+  const generatedOrderNumber = order.order_number || getNextMemoryOrderNumber();
   const newOrder: Order = {
     id: `ord_${Date.now()}`,
+    order_number: generatedOrderNumber,
     user_id: order.user_id || 'demo_user_id',
     items: order.items || [],
     subtotal: order.subtotal || 0,
@@ -675,23 +690,66 @@ export async function createOrder(order: Partial<Order>): Promise<Order> {
   return newOrder;
 }
 
-export async function getOrderById(orderId: string): Promise<Order | null> {
+export async function getOrderById(orderIdOrNumber: string): Promise<Order | null> {
+  if (!orderIdOrNumber) return null;
+  const cleanId = orderIdOrNumber.trim();
+  const isOrderNum = isValidOrderNumber(cleanId);
+
   try {
-    if (!isSupabaseConfigured()) return memoryOrders.find(o => o.id === orderId) || null;
-    const supabase = createAdminClient() || createClient();
-    const { data, error } = await supabase
-      .from('orders')
-      .select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at')
-      .eq('id', orderId)
-      .single();
-    if (error) {
-      console.warn('[getOrderById] Supabase query notice for id:', orderId, error.message);
+    if (!isSupabaseConfigured()) {
+      return (
+        memoryOrders.find(
+          (o) =>
+            o.id === cleanId ||
+            (o.order_number && o.order_number.toUpperCase() === cleanId.toUpperCase())
+        ) || null
+      );
     }
-    if (!error && data) return data as Order;
+    const supabase = createAdminClient() || createClient();
+
+    if (isOrderNum) {
+      // 1. Try order_number lookup first
+      const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_SELECT_FIELDS)
+        .eq('order_number', cleanId.toUpperCase())
+        .maybeSingle();
+      if (!error && data) return data as Order;
+
+      // 2. Fallback to id lookup just in case
+      const { data: byId } = await supabase
+        .from('orders')
+        .select(ORDER_SELECT_FIELDS)
+        .eq('id', cleanId)
+        .maybeSingle();
+      if (byId) return byId as Order;
+    } else {
+      // 1. Try id lookup first
+      const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_SELECT_FIELDS)
+        .eq('id', cleanId)
+        .maybeSingle();
+      if (!error && data) return data as Order;
+
+      // 2. Fallback to order_number lookup
+      const { data: byNum } = await supabase
+        .from('orders')
+        .select(ORDER_SELECT_FIELDS)
+        .eq('order_number', cleanId.toUpperCase())
+        .maybeSingle();
+      if (byNum) return byNum as Order;
+    }
   } catch (err: any) {
     console.error('[getOrderById catch]', err?.message || err);
   }
-  return memoryOrders.find(o => o.id === orderId) || null;
+  return (
+    memoryOrders.find(
+      (o) =>
+        o.id === cleanId ||
+        (o.order_number && o.order_number.toUpperCase() === cleanId.toUpperCase())
+    ) || null
+  );
 }
 
 /** Look up an order by its Razorpay order ID — used in the payment.captured webhook. */
@@ -701,9 +759,9 @@ export async function getOrderByRazorpayOrderId(razorpayOrderId: string): Promis
     const supabase = createAdminClient() || createClient();
     const { data, error } = await supabase
       .from('orders')
-      .select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at')
+      .select(ORDER_SELECT_FIELDS)
       .eq('razorpay_order_id', razorpayOrderId)
-      .single();
+      .maybeSingle();
     if (error) {
       console.warn('[getOrderByRazorpayOrderId] Supabase query notice for razorpayOrderId:', razorpayOrderId, error.message);
     }
@@ -724,7 +782,7 @@ export async function getOrdersByUser(userId: string): Promise<Order[]> {
     const supabase = createAdminClient() || createClient();
     const { data, error } = await supabase
       .from('orders')
-      .select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at')
+      .select(ORDER_SELECT_FIELDS)
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
     if (error) {
@@ -749,7 +807,7 @@ export async function getAllOrders(statusFilter?: string): Promise<Order[]> {
     const supabase = createAdminClient() || createClient();
     let query = supabase
       .from('orders')
-      .select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at')
+      .select(ORDER_SELECT_FIELDS)
       .order('created_at', { ascending: false });
     if (statusFilter && statusFilter !== 'all') query = query.eq('status', statusFilter);
     const { data, error } = await query;
@@ -765,19 +823,32 @@ export async function getAllOrders(statusFilter?: string): Promise<Order[]> {
   return orders;
 }
 
-export async function updateOrderStatus(orderId: string, status: Order['status']): Promise<boolean> {
+export async function updateOrderStatus(orderIdOrNumber: string, status: Order['status']): Promise<boolean> {
+  const cleanId = (orderIdOrNumber || '').trim();
+  const isOrderNum = isValidOrderNumber(cleanId);
+
   if (isSupabaseConfigured()) {
     const supabase = createAdminClient() || createClient();
-    const { error } = await supabase.from('orders').update({ status }).eq('id', orderId);
-    if (error) {
-      console.error('[updateOrderStatus error]', error);
-      throw new Error(`Failed to update order status: ${error.message}`);
+    let res = isOrderNum
+      ? await supabase.from('orders').update({ status }).eq('order_number', cleanId.toUpperCase())
+      : await supabase.from('orders').update({ status }).eq('id', cleanId);
+
+    if (res.error) {
+      // Fallback try the other identifier
+      res = isOrderNum
+        ? await supabase.from('orders').update({ status }).eq('id', cleanId)
+        : await supabase.from('orders').update({ status }).eq('order_number', cleanId.toUpperCase());
     }
-    const idx = memoryOrders.findIndex(o => o.id === orderId);
-    if (idx !== -1) memoryOrders[idx] = { ...memoryOrders[idx], status };
-    return true;
+
+    if (res.error) {
+      console.error('[updateOrderStatus error]', res.error);
+      throw new Error(`Failed to update order status: ${res.error.message}`);
+    }
   }
-  const idx = memoryOrders.findIndex(o => o.id === orderId);
+
+  const idx = memoryOrders.findIndex(
+    (o) => o.id === cleanId || (o.order_number && o.order_number.toUpperCase() === cleanId.toUpperCase())
+  );
   if (idx !== -1) memoryOrders[idx] = { ...memoryOrders[idx], status };
   return true;
 }

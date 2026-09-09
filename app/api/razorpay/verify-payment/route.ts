@@ -285,6 +285,7 @@ export async function POST(request: Request) {
       newOrder = await createOrder(orderPayload);
       console.info('[verify-payment] === SUPABASE ORDER INSERT SUCCESS ===', {
         orderId: newOrder.id,
+        orderNumber: newOrder.order_number,
         user_id: newOrder.user_id,
         total: newOrder.total,
         status: newOrder.status,
@@ -317,6 +318,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       orderId: newOrder.id,
+      orderNumber: newOrder.order_number,
+      order: newOrder,
       message: 'Payment verified and order created successfully.',
     });
   } catch (error: any) {

@@ -22,13 +22,15 @@ const STATUS_COLOR: Record<string, string> = {
 export default async function OrderSuccessPage({ params }: OrderSuccessProps) {
   const order = await getOrderById(params.orderId);
 
+  const displayOrderId = order?.order_number || order?.id || params.orderId;
+
   // Build WhatsApp message
   const itemSummary = order
     ? order.items.map(i => `${i.name} (x${i.quantity})`).join(', ')
     : 'Items';
 
   const whatsappText = encodeURIComponent(
-    `Hi, I just placed an order on Sriyam Store. Order ID: ${params.orderId}, Items: ${itemSummary}, Total: ₹${order?.total || ''}`
+    `Hi, I just placed an order on Sriyam Store. Order ID: ${displayOrderId}, Items: ${itemSummary}, Total: ₹${order?.total || ''}`
   );
 
   const whatsappLink = `https://wa.me/${STORE_CONFIG.whatsappNumber.replace(/\+/g, '')}?text=${whatsappText}`;
@@ -50,7 +52,7 @@ export default async function OrderSuccessPage({ params }: OrderSuccessProps) {
           <p className="text-xs text-zinc-500">
             Order ID:{' '}
             <span className="font-mono font-bold text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded">
-              {order?.id || params.orderId}
+              {displayOrderId}
             </span>
           </p>
           {order && (

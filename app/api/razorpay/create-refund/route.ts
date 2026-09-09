@@ -29,7 +29,7 @@ export async function POST(request: Request) {
         await instance.payments.refund(razorpay_payment_id, {
           amount: refundAmount,
           speed: 'normal',
-          notes: { order_id: orderId, reason: 'Admin initiated refund' },
+          notes: { order_id: order?.order_number || orderId, reason: 'Admin initiated refund' },
         });
       } catch (err) {
         console.warn('Razorpay refund API error, proceeding with status update only:', err);

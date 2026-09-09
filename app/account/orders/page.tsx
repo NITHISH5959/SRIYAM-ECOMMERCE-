@@ -31,9 +31,10 @@ function StatusBadge({ status }: { status: string }) {
 
 function OrderCard({ order }: { order: Order }) {
   const [open, setOpen] = useState(false);
+  const displayId = order.order_number || order.id;
 
   const whatsappText = encodeURIComponent(
-    `Hello ${STORE_CONFIG.name}! 🙏\n\nOrder ID: ${order.id}\n\nPlease update me on my order status. Thank you!`
+    `Hello ${STORE_CONFIG.name}! 🙏\n\nOrder ID: ${displayId}\n\nPlease update me on my order status. Thank you!`
   );
   const waLink = `https://wa.me/${STORE_CONFIG.whatsappNumber.replace(/\+/g, '')}?text=${whatsappText}`;
 
@@ -49,7 +50,7 @@ function OrderCard({ order }: { order: Order }) {
             <Package className="w-5 h-5" />
           </div>
           <div className="space-y-0.5">
-            <p className="font-mono text-xs font-bold text-zinc-900 tracking-wide">{order.id}</p>
+            <p className="font-mono text-xs font-bold text-zinc-900 tracking-wide">{displayId}</p>
             <p className="text-[11px] text-zinc-500">
               {new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} &nbsp;·&nbsp;
               {order.items.length} item{order.items.length > 1 ? 's' : ''}

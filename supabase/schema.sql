@@ -140,3 +140,39 @@ from pg_trigger where tgname = 'on_auth_user_created';
 alter table public.products add column if not exists is_featured boolean not null default false;
 alter table public.products alter column price drop default;
 alter table public.products alter column compare_at_price drop default;
+
+-- =============================================
+-- MIGRATION: Sequential Order IDs (SRI001, SRI002, ...)
+-- =============================================
+create sequence if not exists public.order_number_seq start with 1 increment by 1;
+
+create or replace function public.generate_order_number()
+returns text as $$
+declare
+  next_val bigint;
+begin
+  next_val := nextval('public.order_number_seq');
+  return 'SRI' || lpad(next_val::text, greatest(3, length(next_val::text)), '0');
+end;
+$$ language plpgsql;
+
+alter table public.orders 
+  add column if not exists order_number text unique default public.generate_order_number();
+
+create or replace function public.set_order_number()
+returns trigger as $$
+begin
+  if new.order_number is null or new.order_number = '' then
+    new.order_number := public.generate_order_number();
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trigger_set_order_number on public.orders;
+create trigger trigger_set_order_number
+  before insert on public.orders
+  for each row
+  execute function public.set_order_number();
+
+create unique index if not exists orders_order_number_idx on public.orders(order_number);

@@ -6,7 +6,7 @@ import { Order } from '@/types';
 import { STORE_CONFIG } from '@/lib/config';
 import {
   Package, ChevronDown, ChevronUp, RefreshCw, Loader2,
-  AlertTriangle, MapPin, CheckCircle2, Truck, Clock, XCircle, DollarSign,
+  AlertTriangle, MapPin, CheckCircle2, Truck, Clock, XCircle, DollarSign, Search, X
 } from 'lucide-react';
 
 const STATUSES = ['all', 'pending', 'paid', 'shipped', 'delivered', 'cancelled'] as const;
@@ -36,6 +36,7 @@ function OrderRow({ order, onStatusChange, onRefund }: {
   const [open, setOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [refunding, setRefunding] = useState(false);
+  const displayId = order.order_number || order.id;
 
   const handleStatus = async (newStatus: Order['status']) => {
     setUpdating(true);
@@ -44,7 +45,7 @@ function OrderRow({ order, onStatusChange, onRefund }: {
   };
 
   const handleRefund = async () => {
-    if (!confirm(`Issue refund for order ${order.id}?\n\nThis will cancel the order and attempt to refund ₹${order.total} via Razorpay.`)) return;
+    if (!confirm(`Issue refund for order ${displayId}?\n\nThis will cancel the order and attempt to refund ₹${order.total} via Razorpay.`)) return;
     setRefunding(true);
     await onRefund(order.id, order.razorpay_payment_id ?? '');
     setRefunding(false);
@@ -60,7 +61,7 @@ function OrderRow({ order, onStatusChange, onRefund }: {
         <div className="flex items-center gap-3 text-xs min-w-0">
           <Package className="w-4 h-4 text-amber-800 flex-shrink-0" />
           <div className="min-w-0">
-            <p className="font-mono font-bold text-zinc-900 truncate">{order.id}</p>
+            <p className="font-mono font-bold text-zinc-900 truncate">{displayId}</p>
             <p className="text-zinc-400 text-[11px]">{new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} · {order.items.length} item{order.items.length > 1 ? 's' : ''}</p>
           </div>
         </div>
@@ -153,6 +154,7 @@ export default function AdminOrdersPage() {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -168,8 +170,29 @@ export default function AdminOrdersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Derive visible orders from the active filter
-  const orders = filter === 'all' ? allOrders : allOrders.filter(o => o.status === filter);
+  // Derive visible orders from the active filter & search query
+  const orders = allOrders.filter(o => {
+    const matchesFilter = filter === 'all' || o.status === filter;
+    if (!matchesFilter) return false;
+
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.trim().toLowerCase();
+    const orderNum = (o.order_number || '').toLowerCase();
+    const orderId = (o.id || '').toLowerCase();
+    const custName = (o.shipping_address?.name || '').toLowerCase();
+    const custPhone = (o.shipping_address?.phone || '').toLowerCase();
+    const custCity = (o.shipping_address?.city || '').toLowerCase();
+    const paymentId = (o.razorpay_payment_id || '').toLowerCase();
+
+    return (
+      orderNum.includes(q) ||
+      orderId.includes(q) ||
+      custName.includes(q) ||
+      custPhone.includes(q) ||
+      custCity.includes(q) ||
+      paymentId.includes(q)
+    );
+  });
 
   const handleStatusChange = async (orderId: string, status: Order['status']) => {
     const res = await fetch('/api/orders/update-status', {
@@ -221,19 +244,41 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
-      {/* Status Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-zinc-200 pb-4">
-        {STATUSES.map(s => {
-          const cfg = s === 'all' ? { label: 'All', color: '' } : STATUS_CONFIG[s];
-          const active = filter === s;
-          return (
-            <button key={s} onClick={() => setFilter(s)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all ${active ? 'bg-amber-800 text-white border-amber-800' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}`}>
-              {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
-              {filter !== s && <span className="ml-1.5 text-[10px] opacity-60">{counts[s] || 0}</span>}
+      {/* Search and Status Tabs */}
+      <div className="space-y-4">
+        {/* Search Bar */}
+        <div className="relative max-w-md">
+          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search by Order ID (e.g. SRI001), Customer, Phone, City..."
+            className="w-full pl-9 pr-9 py-2 text-xs bg-white border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-800 focus:border-amber-800 transition-all placeholder:text-zinc-400"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+            >
+              <X className="w-3.5 h-3.5" />
             </button>
-          );
-        })}
+          )}
+        </div>
+
+        {/* Status Tabs */}
+        <div className="flex flex-wrap gap-2 border-b border-zinc-200 pb-4">
+          {STATUSES.map(s => {
+            const active = filter === s;
+            return (
+              <button key={s} onClick={() => setFilter(s)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all ${active ? 'bg-amber-800 text-white border-amber-800' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}`}>
+                {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                {filter !== s && <span className="ml-1.5 text-[10px] opacity-60">{counts[s] || 0}</span>}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {loading ? (
@@ -241,7 +286,19 @@ export default function AdminOrdersPage() {
       ) : orders.length === 0 ? (
         <div className="text-center py-16 text-zinc-400 space-y-2">
           <Package className="w-12 h-12 mx-auto text-zinc-300" />
-          <p className="font-semibold">No orders {filter !== 'all' && `with status "${filter}"`}</p>
+          <p className="font-semibold">
+            {searchQuery
+              ? `No orders matching "${searchQuery}"`
+              : `No orders ${filter !== 'all' ? `with status "${filter}"` : ''}`}
+          </p>
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="text-xs text-amber-800 hover:underline font-medium"
+            >
+              Clear search filter
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">

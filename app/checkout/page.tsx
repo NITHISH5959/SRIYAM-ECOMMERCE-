@@ -271,7 +271,8 @@ export default function CheckoutPage() {
 
           if (vRes.ok && vData?.success) {
             clearCart();
-            router.push(`/order-success/${vData.orderId}`);
+            const destinationId = vData.orderNumber || vData.orderId;
+            router.push(`/order-success/${destinationId}`);
           } else {
             const errorMsg = vData?.message || "Payment didn't go through. Please try again.";
             setPayError(errorMsg);

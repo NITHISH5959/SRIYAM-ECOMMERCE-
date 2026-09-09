@@ -81,6 +81,7 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
+  order_number: string;
   user_id: string;
   items: OrderItem[];
   subtotal: number;
