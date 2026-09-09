@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   MessageCircle,
   Layers,
+  ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAddFeedback } from '@/hooks/useAddFeedback';
@@ -29,7 +30,7 @@ export default function ProductDetailClient({
   product,
   relatedProducts,
 }: ProductDetailClientProps) {
-  const { addToCart } = useCart();
+  const { addToCart, cart } = useCart();
   const [quantity, setQuantity] = useState(1);
 
   // ── Variant / size selection (Frames only) ────────────────────────────────
@@ -69,6 +70,11 @@ export default function ProductDetailClient({
   };
 
   const { isAdded, trigger } = useAddFeedback(handleAddToCart);
+
+  // Check if current item (or selected frame size) is already in cart
+  const isInCart = isFrame
+    ? (selectedVariant ? cart.some(i => i.product.id === product.id && i.size === selectedVariant.size) : false)
+    : cart.some(i => i.product.id === product.id);
 
   // Add-to-cart button disabled state
   const isAddDisabled =
@@ -267,31 +273,42 @@ export default function ProductDetailClient({
                 </div>
               </div>
 
-              <button
-                onClick={trigger}
-                disabled={isAddDisabled}
-                className={`w-full py-4 font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 select-none ${
-                  isAdded
-                    ? 'bg-amber-800 text-white animate-btn-success'
-                    : 'bg-zinc-900 text-white hover:bg-amber-800 disabled:opacity-50'
-                }`}
-              >
-                {isAdded ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Added to Cart</span>
-                  </>
-                ) : (
-                  <>
-                    <ShoppingBag className="w-4 h-4" />
-                    <span>
-                      {isFrame && !selectedVariant
-                        ? 'Select a Size to Add to Cart'
-                        : `Add ${quantity} to Cart`}
-                    </span>
-                  </>
-                )}
-              </button>
+              {isInCart ? (
+                <Link
+                  href="/cart"
+                  className="w-full py-4 font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 select-none bg-amber-800 text-white hover:bg-amber-900"
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>Go to Cart</span>
+                  <ArrowRight className="w-4 h-4 ml-1" />
+                </Link>
+              ) : (
+                <button
+                  onClick={trigger}
+                  disabled={isAddDisabled}
+                  className={`w-full py-4 font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 select-none ${
+                    isAdded
+                      ? 'bg-amber-800 text-white animate-btn-success'
+                      : 'bg-zinc-900 text-white hover:bg-amber-800 disabled:opacity-50'
+                  }`}
+                >
+                  {isAdded ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Added to Cart</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-4 h-4" />
+                      <span>
+                        {isFrame && !selectedVariant
+                          ? 'Select a Size to Add to Cart'
+                          : `Add ${quantity} to Cart`}
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
 

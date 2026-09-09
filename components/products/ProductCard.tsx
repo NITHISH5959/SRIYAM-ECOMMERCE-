@@ -15,11 +15,10 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product }: ProductCardProps) {
-  const { addToCart } = useCart();
-  const { isAdded, trigger } = useAddFeedback(() => addToCart(product, 1));
-
-  // Frame products have variants — show "From ₹" and direct to PDP for size selection
+  const { addToCart, cart } = useCart();
   const isFrame = product.category?.slug === 'frames';
+  const isInCart = !isFrame && cart.some(i => i.product.id === product.id);
+  const { isAdded, trigger } = useAddFeedback(() => addToCart(product, 1));
 
   const price = product.price ?? STORE_CONFIG.defaultPricing.price;
   const compareAtPrice = product.compare_at_price ?? STORE_CONFIG.defaultPricing.compareAtPrice;
@@ -114,6 +113,14 @@ export default function ProductCard({ product }: ProductCardProps) {
             >
               <Layers className="w-3.5 h-3.5" />
               <span>Select Size</span>
+            </Link>
+          ) : isInCart ? (
+            <Link
+              href="/cart"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-800 text-white hover:bg-amber-900 rounded-lg text-xs font-semibold tracking-wide transition-colors shadow-sm"
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>Go to Cart</span>
             </Link>
           ) : (
             <button
