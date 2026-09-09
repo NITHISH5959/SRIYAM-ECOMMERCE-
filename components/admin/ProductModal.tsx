@@ -321,7 +321,13 @@ export default function ProductModal({
         productToSave = { ...productToSave, price: minPrice, compare_at_price: minMrp };
       }
 
-      await saveProductAction(productToSave, isFramesProduct ? variants : undefined);
+      const res = await saveProductAction(productToSave, isFramesProduct ? variants : undefined);
+
+      if (!res.success) {
+        setGlobalError(res.error || 'Failed to save product.');
+        setIsSaving(false);
+        return;
+      }
 
       onSuccess();
       onClose();

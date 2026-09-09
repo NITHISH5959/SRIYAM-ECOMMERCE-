@@ -29,24 +29,34 @@ export async function createClient() {
   );
 }
 
+import { isSupabaseConfigured } from './client';
+
 /**
  * Server-side security helper to verify if the request comes from an authenticated admin.
  * Automatically falls back to allowing actions if we are running in local demo / placeholder mode.
  */
 export async function checkIsAdmin(): Promise<boolean> {
+  if (!isSupabaseConfigured()) {
+    return true;
+  }
+
   try {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-    if (!user) {
+    if (userError || !user) {
       return false;
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('is_admin')
       .eq('id', user.id)
       .single();
+
+    if (profileError) {
+      return false;
+    }
 
     return profile?.is_admin === true;
   } catch (error) {
