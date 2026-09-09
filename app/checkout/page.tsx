@@ -13,6 +13,40 @@ import {
   Lock, AlertTriangle, Loader2, RefreshCw,
 } from 'lucide-react';
 
+/**
+ * Robust loader for Razorpay Checkout SDK.
+ * Handles preloading, DOM verification, and dynamic script injection fallback.
+ */
+function loadRazorpaySDK(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') return resolve(false);
+    if ((window as any).Razorpay) return resolve(true);
+
+    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existing) {
+      let checks = 0;
+      const interval = setInterval(() => {
+        checks++;
+        if ((window as any).Razorpay) {
+          clearInterval(interval);
+          resolve(true);
+        } else if (checks > 50) {
+          clearInterval(interval);
+          resolve(false);
+        }
+      }, 100);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const { cart, subtotal, coupon, discountAmount, isFreeShippingCoupon, clearCart, user, cartLoaded } = useCart();
@@ -45,12 +79,15 @@ export default function CheckoutPage() {
   const [payError, setPayError] = useState('');
   const [stockError, setStockError] = useState('');
 
-  // Check if Razorpay SDK already exists on window (e.g. cached or preloaded)
+  // Proactively initialize and check Razorpay SDK on mount
   useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).Razorpay) {
-      setRzpLoaded(true);
-    }
-  }, []);
+    loadRazorpaySDK().then((ready) => {
+      if (ready) {
+        setRzpLoaded(true);
+        setRzpError(false);
+      }
+    });
+  }, [scriptRetryKey]);
 
   const selectedAddress = addresses.find(a => a.id === selectedAddressId);
   const activePincode = isAddingNew
@@ -161,15 +198,25 @@ export default function CheckoutPage() {
       setPayError(shippingError || 'Delivery is not available to the selected address pincode.');
       return;
     }
-    if (typeof window === 'undefined' || !(window as any).Razorpay) {
-      setPayError('Razorpay SDK is not ready yet. Please wait a moment or click Retry.');
-      setRzpError(true);
-      return;
-    }
 
     setPayLoading(true);
+
     try {
-      // Pre-flight client-side stock check (UX convenience only — server re-checks)
+      // 1. Ensure Razorpay SDK is fully ready
+      let isReady = typeof window !== 'undefined' && !!(window as any).Razorpay;
+      if (!isReady) {
+        isReady = await loadRazorpaySDK();
+      }
+      if (!isReady) {
+        setPayError('Payment gateway is loading. Please check your internet connection and click Try Again.');
+        setRzpError(true);
+        setPayLoading(false);
+        return;
+      }
+      setRzpLoaded(true);
+      setRzpError(false);
+
+      // 2. Pre-flight client-side stock check
       for (const item of cart) {
         if (item.product.stock < item.quantity) {
           const label = item.size ? `"${item.product.name}" (${item.size})` : `"${item.product.name}"`;
@@ -179,7 +226,7 @@ export default function CheckoutPage() {
         }
       }
 
-      // Build cart items — IDs and quantities only; server fetches live prices
+      // 3. Build cart items
       const cartItems = cart.map(i => ({
         product_id: i.product.id,
         name: i.product.name,
@@ -189,7 +236,7 @@ export default function CheckoutPage() {
         size: i.size,
       }));
 
-      // Step 1: Create Razorpay order — server recalculates total & dynamic Delhivery shipping
+      // 4. Create Razorpay order server-side
       const orderRes = await fetch('/api/razorpay/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -201,52 +248,63 @@ export default function CheckoutPage() {
           shipping_address: selectedAddress,
         }),
       });
-      const orderData = await orderRes.json();
-      if (!orderData.success) {
-        setPayError('Failed to create payment: ' + (orderData.message || 'Error occurred'));
+
+      const orderData = await orderRes.json().catch(() => null);
+
+      if (!orderData?.success) {
+        setPayError(orderData?.message || 'Failed to initialize order payment. Please try again.');
         setPayLoading(false);
         return;
       }
 
-      // Use server-authorised total (not client-calculated finalTotal)
       const serverTotal = orderData.calculatedTotal ?? finalTotal;
 
-      // Step 2: After payment completes, verify signature server-side and create order
+      // 5. Verification callback
       const verifyPayment = async (rpOrderId: string, rpPaymentId: string, rpSig: string) => {
-        const vRes = await fetch('/api/razorpay/verify-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            razorpay_order_id: rpOrderId,
-            razorpay_payment_id: rpPaymentId,
-            razorpay_signature: rpSig,
-            orderData: {
-              user_id: user?.id || '',
-              items: cartItems,
-              subtotal,
-              discount_amount: discountAmount,
-              coupon_code: coupon?.code || '',
-              shipping_fee: effectiveShippingFee,
-              total: serverTotal,
-              shipping_address: selectedAddress,
-            },
-          }),
-        });
-        const vData = await vRes.json();
-        if (vData.success) {
-          clearCart();
-          router.push(`/order-success/${vData.orderId}`);
-        } else {
-          setPayError(vData.message || 'Payment verification failed. Please contact support.');
+        try {
+          setPayLoading(true);
+          const vRes = await fetch('/api/razorpay/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpay_order_id: rpOrderId,
+              razorpay_payment_id: rpPaymentId,
+              razorpay_signature: rpSig,
+              orderData: {
+                user_id: user?.id || '',
+                items: cartItems,
+                subtotal,
+                discount_amount: discountAmount,
+                coupon_code: coupon?.code || '',
+                shipping_fee: effectiveShippingFee,
+                total: serverTotal,
+                shipping_address: selectedAddress,
+              },
+            }),
+          });
+
+          const vData = await vRes.json().catch(() => null);
+
+          if (vRes.ok && vData?.success) {
+            clearCart();
+            router.push(`/order-success/${vData.orderId}`);
+          } else {
+            const errorMsg = vData?.message || "Payment didn't go through. Please try again.";
+            setPayError(errorMsg);
+            setPayLoading(false);
+          }
+        } catch (vErr: any) {
+          console.error('[verify-payment Client Error]', vErr);
+          setPayError("Payment verification could not be completed. Please check your connection or contact support.");
           setPayLoading(false);
         }
       };
 
-      // Open Razorpay Checkout modal
+      // 6. Open Razorpay Checkout modal
       const options = {
         key: orderData.key,
         amount: orderData.amount,
-        currency: orderData.currency,
+        currency: orderData.currency || 'INR',
         name: STORE_CONFIG.name,
         description: 'Payment for Sriyam Store Order',
         image: '/logo.png',
@@ -258,33 +316,40 @@ export default function CheckoutPage() {
         },
         theme: { color: '#92400e' },
         handler: function (response: any) {
-          verifyPayment(
-            response.razorpay_order_id,
-            response.razorpay_payment_id,
-            response.razorpay_signature
-          );
+          try {
+            verifyPayment(
+              response.razorpay_order_id,
+              response.razorpay_payment_id,
+              response.razorpay_signature
+            );
+          } catch (err: any) {
+            console.error('[Razorpay Handler Error]', err);
+            setPayError("Payment didn't go through. Please try again.");
+            setPayLoading(false);
+          }
         },
         modal: {
           ondismiss: function () {
             setPayLoading(false);
+            setPayError("Payment was cancelled. You can retry whenever you're ready.");
           },
         },
       };
 
-      if (typeof window !== 'undefined' && (window as any).Razorpay) {
-        const rzp = new (window as any).Razorpay(options);
-        rzp.on('payment.failed', function (resp: any) {
-          setPayError(resp.error?.description || 'Payment failed. Please try again.');
-          setPayLoading(false);
-        });
-        rzp.open();
-      } else {
-        setPayError('Razorpay SDK failed to load. Please click Retry below.');
-        setRzpError(true);
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on('payment.failed', function (resp: any) {
+        console.warn('[Razorpay Payment Failed Callback]', resp?.error);
+        const reason = resp?.error?.description || resp?.error?.reason;
+        const msg = reason
+          ? `Payment didn't go through: ${reason}. Please try again.`
+          : "Payment didn't go through. Please try again.";
+        setPayError(msg);
         setPayLoading(false);
-      }
+      });
+      rzp.open();
     } catch (e: any) {
-      setPayError(e.message || 'An error occurred while setting up payment.');
+      console.error('[Checkout Pay Initialization Error]', e);
+      setPayError(e.message || "Payment didn't go through. Please try again.");
       setPayLoading(false);
     }
   };
@@ -315,27 +380,22 @@ export default function CheckoutPage() {
     !selectedAddress ||
     isCalculatingShipping ||
     !!shippingError ||
-    shippingServiceable === false ||
-    !rzpLoaded ||
-    rzpError;
+    shippingServiceable === false;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-8">
-      {/* Razorpay Checkout Official SDK script loaded via Next.js Script */}
+      {/* Razorpay Checkout Official SDK script */}
       <Script
         id="razorpay-checkout-sdk"
         key={`rzp-sdk-${scriptRetryKey}`}
         src="https://checkout.razorpay.com/v1/checkout.js"
         strategy="afterInteractive"
         onLoad={() => {
-          console.info('[Razorpay SDK] Loaded successfully');
           setRzpLoaded(true);
           setRzpError(false);
         }}
-        onError={(e) => {
-          console.error('[Razorpay SDK Load Error]', e);
+        onError={() => {
           setRzpError(true);
-          setPayError('Failed to load Razorpay payment SDK. Please click Retry below.');
         }}
       />
 
@@ -345,25 +405,40 @@ export default function CheckoutPage() {
       </div>
 
       {payError && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600" />
             <span>{payError}</span>
           </div>
-          {rzpError && (
-            <button
-              type="button"
-              onClick={() => {
-                setRzpError(false);
-                setPayError('');
-                setScriptRetryKey(k => k + 1);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-900 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors w-fit"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Retry Loading Gateway</span>
-            </button>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {rzpError ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setRzpError(false);
+                  setPayError('');
+                  setScriptRetryKey(k => k + 1);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-900 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry Gateway</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPayError('');
+                  handlePay();
+                }}
+                disabled={isPayDisabled}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-800 text-white text-xs font-bold rounded-lg hover:bg-amber-900 disabled:opacity-50 transition-colors uppercase tracking-wider"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Try Again</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -551,17 +626,13 @@ export default function CheckoutPage() {
               className="w-full py-4 bg-amber-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-900 disabled:opacity-50 transition-colors shadow-lg flex items-center justify-center gap-2"
             >
               {payLoading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /><span>Processing...</span></>
+                <><Loader2 className="w-4 h-4 animate-spin" /><span>Processing Payment...</span></>
               ) : isCalculatingShipping ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /><span>Calculating Shipping...</span></>
               ) : shippingError ? (
                 <span>Shipping Unavailable</span>
               ) : !selectedAddress ? (
                 <span>Select Address to Continue</span>
-              ) : rzpError ? (
-                <span>Gateway Failed (Click Retry Above)</span>
-              ) : !rzpLoaded ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /><span>Initializing Payment Gateway...</span></>
               ) : (
                 <><CreditCard className="w-4 h-4" /><span>Pay {STORE_CONFIG.defaultPricing.currency}{finalTotal.toLocaleString()} via Razorpay</span></>
               )}
