@@ -1,5 +1,6 @@
 import { Category, Product, ProductVariant, Coupon, Address, Order } from '@/types';
 import { createClient, isSupabaseConfigured } from './supabase/client';
+import { createAdminClient } from './supabase/admin';
 
 export const INITIAL_CATEGORIES: Category[] = [
   { id: '11111111-1111-1111-1111-111111111111', name: 'Frames', slug: 'frames' },
@@ -592,20 +593,55 @@ export async function setDefaultAddress(id: string, userId: string): Promise<boo
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
 export async function createOrder(order: Partial<Order>): Promise<Order> {
-  try {
-    if (!isSupabaseConfigured()) throw new Error('not configured');
-    const supabase = createClient();
+  if (isSupabaseConfigured()) {
+    // Trusted server action: use admin service_role client if available to bypass RLS, fallback to standard client
+    const supabase = createAdminClient() || createClient();
+    console.info('[createOrder] Inserting order into Supabase:', {
+      user_id: order.user_id,
+      items_count: order.items?.length,
+      subtotal: order.subtotal,
+      discount_amount: order.discount_amount,
+      shipping_fee: order.shipping_fee,
+      total: order.total,
+      status: order.status,
+      razorpay_order_id: order.razorpay_order_id,
+      razorpay_payment_id: order.razorpay_payment_id,
+    });
+
     const { data, error } = await supabase.from('orders').insert([order]).select().single();
-    if (!error && data) { memoryOrders.push(data as Order); return data as Order; }
-  } catch {}
+    if (error) {
+      console.error('[createOrder] Supabase insert ERROR:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        orderPayload: order,
+      });
+      throw new Error(`Failed to save order to Supabase: ${error.message}`);
+    }
+    if (data) {
+      console.info('[createOrder] Order successfully created in Supabase with ID:', data.id);
+      memoryOrders.push(data as Order);
+      return data as Order;
+    }
+  }
+
+  // Fallback ONLY for local demo mode without Supabase credentials
+  console.warn('[createOrder] Supabase not configured, saving to in-memory store');
   const newOrder: Order = {
-    id: `ord_${Date.now()}`, user_id: order.user_id || 'demo_user_id',
-    items: order.items || [], subtotal: order.subtotal || 0,
-    discount_amount: order.discount_amount || 0, coupon_code: order.coupon_code || '',
-    shipping_fee: order.shipping_fee || 0, total: order.total || 0,
-    status: order.status || 'paid', razorpay_order_id: order.razorpay_order_id || '',
+    id: `ord_${Date.now()}`,
+    user_id: order.user_id || 'demo_user_id',
+    items: order.items || [],
+    subtotal: order.subtotal || 0,
+    discount_amount: order.discount_amount || 0,
+    coupon_code: order.coupon_code || '',
+    shipping_fee: order.shipping_fee || 0,
+    total: order.total || 0,
+    status: order.status || 'paid',
+    razorpay_order_id: order.razorpay_order_id || '',
     razorpay_payment_id: order.razorpay_payment_id || '',
-    shipping_address: order.shipping_address as Address, created_at: new Date().toISOString(),
+    shipping_address: order.shipping_address as Address,
+    created_at: new Date().toISOString(),
   };
   memoryOrders.push(newOrder);
   return newOrder;
@@ -614,10 +650,19 @@ export async function createOrder(order: Partial<Order>): Promise<Order> {
 export async function getOrderById(orderId: string): Promise<Order | null> {
   try {
     if (!isSupabaseConfigured()) return memoryOrders.find(o => o.id === orderId) || null;
-    const supabase = createClient();
-    const { data, error } = await supabase.from('orders').select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at').eq('id', orderId).single();
+    const supabase = createAdminClient() || createClient();
+    const { data, error } = await supabase
+      .from('orders')
+      .select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at')
+      .eq('id', orderId)
+      .single();
+    if (error) {
+      console.warn('[getOrderById] Supabase query notice for id:', orderId, error.message);
+    }
     if (!error && data) return data as Order;
-  } catch {}
+  } catch (err: any) {
+    console.error('[getOrderById catch]', err?.message || err);
+  }
   return memoryOrders.find(o => o.id === orderId) || null;
 }
 
@@ -625,25 +670,45 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
 export async function getOrderByRazorpayOrderId(razorpayOrderId: string): Promise<Order | null> {
   try {
     if (!isSupabaseConfigured()) return memoryOrders.find(o => o.razorpay_order_id === razorpayOrderId) || null;
-    const supabase = createClient();
+    const supabase = createAdminClient() || createClient();
     const { data, error } = await supabase
       .from('orders')
       .select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at')
       .eq('razorpay_order_id', razorpayOrderId)
       .single();
+    if (error) {
+      console.warn('[getOrderByRazorpayOrderId] Supabase query notice for razorpayOrderId:', razorpayOrderId, error.message);
+    }
     if (!error && data) return data as Order;
-  } catch {}
+  } catch (err: any) {
+    console.error('[getOrderByRazorpayOrderId catch]', err?.message || err);
+  }
   return memoryOrders.find(o => o.razorpay_order_id === razorpayOrderId) || null;
 }
 
 export async function getOrdersByUser(userId: string): Promise<Order[]> {
   try {
-    if (!isSupabaseConfigured()) return memoryOrders.filter(o => o.user_id === userId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    const supabase = createClient();
-    const { data, error } = await supabase.from('orders').select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at').eq('user_id', userId).order('created_at', { ascending: false });
+    if (!isSupabaseConfigured()) {
+      return memoryOrders
+        .filter(o => o.user_id === userId)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+    const supabase = createAdminClient() || createClient();
+    const { data, error } = await supabase
+      .from('orders')
+      .select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('[getOrdersByUser error]', error);
+    }
     if (!error && data) return data as Order[];
-  } catch {}
-  return memoryOrders.filter(o => o.user_id === userId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  } catch (err: any) {
+    console.error('[getOrdersByUser catch]', err?.message || err);
+  }
+  return memoryOrders
+    .filter(o => o.user_id === userId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
 export async function getAllOrders(statusFilter?: string): Promise<Order[]> {
@@ -653,24 +718,37 @@ export async function getAllOrders(statusFilter?: string): Promise<Order[]> {
       if (statusFilter && statusFilter !== 'all') orders = orders.filter(o => o.status === statusFilter);
       return orders;
     }
-    const supabase = createClient();
-    let query = supabase.from('orders').select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at').order('created_at', { ascending: false });
+    const supabase = createAdminClient() || createClient();
+    let query = supabase
+      .from('orders')
+      .select('id, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at')
+      .order('created_at', { ascending: false });
     if (statusFilter && statusFilter !== 'all') query = query.eq('status', statusFilter);
     const { data, error } = await query;
+    if (error) {
+      console.error('[getAllOrders error]', error);
+    }
     if (!error && data) return data as Order[];
-  } catch {}
+  } catch (err: any) {
+    console.error('[getAllOrders catch]', err?.message || err);
+  }
   let orders = [...memoryOrders].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   if (statusFilter && statusFilter !== 'all') orders = orders.filter(o => o.status === statusFilter);
   return orders;
 }
 
 export async function updateOrderStatus(orderId: string, status: Order['status']): Promise<boolean> {
-  try {
-    if (!isSupabaseConfigured()) throw new Error('not configured');
-    const supabase = createClient();
+  if (isSupabaseConfigured()) {
+    const supabase = createAdminClient() || createClient();
     const { error } = await supabase.from('orders').update({ status }).eq('id', orderId);
-    if (!error) { const idx = memoryOrders.findIndex(o => o.id === orderId); if (idx !== -1) memoryOrders[idx] = { ...memoryOrders[idx], status }; return true; }
-  } catch {}
+    if (error) {
+      console.error('[updateOrderStatus error]', error);
+      throw new Error(`Failed to update order status: ${error.message}`);
+    }
+    const idx = memoryOrders.findIndex(o => o.id === orderId);
+    if (idx !== -1) memoryOrders[idx] = { ...memoryOrders[idx], status };
+    return true;
+  }
   const idx = memoryOrders.findIndex(o => o.id === orderId);
   if (idx !== -1) memoryOrders[idx] = { ...memoryOrders[idx], status };
   return true;

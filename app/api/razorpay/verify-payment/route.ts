@@ -10,6 +10,7 @@ import {
   validateCouponCode,
   incrementCouponUsageCount,
 } from '@/lib/data';
+import { createClient as createServerClient } from '@/lib/supabase/server';
 import { verifyPaymentLimiter, getClientIp } from '@/lib/rate-limit';
 import { calculateDelhiveryRate, calculateTotalCartWeightGrams } from '@/lib/delhivery';
 
@@ -267,19 +268,63 @@ export async function POST(request: Request) {
     // ════════════════════════════════════════════════════════════════════════
     // STEP 7 — CREATE CONFIRMED ORDER RECORD
     // ════════════════════════════════════════════════════════════════════════
-    const newOrder = await createOrder({
-      user_id: orderData.user_id || 'demo_user_id',
+    let effectiveUserId = orderData.user_id;
+    if (!effectiveUserId || effectiveUserId === 'demo_user_id') {
+      try {
+        const serverSupabase = await createServerClient();
+        const { data: { user } } = await serverSupabase.auth.getUser();
+        if (user?.id) {
+          effectiveUserId = user.id;
+          console.info('[verify-payment] Captured user_id from server session cookies:', effectiveUserId);
+        }
+      } catch (authErr) {
+        console.warn('[verify-payment] Could not resolve user from server session cookies:', authErr);
+      }
+    }
+
+    const orderPayload = {
+      user_id: effectiveUserId || orderData.user_id || 'demo_user_id',
       items: verifiedItems,
       subtotal: calculatedSubtotal,
       discount_amount: calculatedDiscount,
       coupon_code: orderData.coupon_code || '',
       shipping_fee: calculatedShipping,
       total: calculatedTotal,
-      status: 'paid',
+      status: 'paid' as const,
       razorpay_order_id,
       razorpay_payment_id: razorpay_payment_id || `pay_${Date.now()}`,
       shipping_address: orderData.shipping_address,
-    });
+    };
+
+    console.info('[verify-payment] === INITIATING SUPABASE ORDER INSERT ===');
+    console.info('[verify-payment] Order Insert Payload:', JSON.stringify(orderPayload, null, 2));
+
+    let newOrder;
+    try {
+      newOrder = await createOrder(orderPayload);
+      console.info('[verify-payment] === SUPABASE ORDER INSERT SUCCESS ===', {
+        orderId: newOrder.id,
+        user_id: newOrder.user_id,
+        total: newOrder.total,
+        status: newOrder.status,
+      });
+    } catch (orderInsertErr: any) {
+      console.error('[verify-payment] === SUPABASE ORDER INSERT FAILED ===', {
+        errorMessage: orderInsertErr?.message,
+        errorCode: orderInsertErr?.code,
+        errorDetails: orderInsertErr?.details,
+        errorHint: orderInsertErr?.hint,
+        orderPayload,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Payment verified, but saving your order to database failed: ${orderInsertErr?.message || 'DB Error'}. Please contact support with Payment ID: ${razorpay_payment_id}`,
+          paymentId: razorpay_payment_id,
+        },
+        { status: 500 }
+      );
+    }
 
     // ════════════════════════════════════════════════════════════════════════
     // STEP 8 — INCREMENT COUPON USAGE (only after order is persisted)
@@ -294,9 +339,9 @@ export async function POST(request: Request) {
       message: 'Payment verified and order created successfully.',
     });
   } catch (error: any) {
-    console.error('[verify-payment] Unhandled error:', { message: error?.message });
+    console.error('[verify-payment] Unhandled error:', { message: error?.message, stack: error?.stack });
     return NextResponse.json(
-      { success: false, message: 'Payment verification failed. Please contact support.' },
+      { success: false, message: error?.message || 'Payment verification failed. Please contact support.' },
       { status: 500 }
     );
   }
