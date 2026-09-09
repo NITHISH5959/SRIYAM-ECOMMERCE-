@@ -58,7 +58,7 @@ export function getNextMemoryOrderNumber(): string {
 export async function getCategories(): Promise<Category[]> {
   try {
     if (!isSupabaseConfigured()) return memoryCategories;
-    const supabase = createClient();
+    const supabase = createAdminClient() || createClient();
     const { data, error } = await supabase.from('categories').select('id, name, slug');
     if (!error && data && data.length > 0) return data;
 
@@ -76,7 +76,7 @@ export async function getCategories(): Promise<Category[]> {
 export async function getProducts(categorySlug?: string): Promise<Product[]> {
   try {
     if (!isSupabaseConfigured()) throw new Error('not configured');
-    const supabase = createClient();
+    const supabase = createAdminClient() || createClient();
     const isFiltered = categorySlug && categorySlug !== 'all';
     const selectClause = isFiltered
       ? '*, category:categories!inner(*)'
@@ -110,7 +110,7 @@ export async function getFeaturedProducts(): Promise<Product[]> {
 export async function getAllProductsAdmin(): Promise<Product[]> {
   try {
     if (!isSupabaseConfigured()) return memoryProducts;
-    const supabase = createClient();
+    const supabase = createAdminClient() || createClient();
     const { data, error } = await supabase
       .from('products')
       .select('*, category:categories(*)')
@@ -130,7 +130,7 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
       }
       return null;
     }
-    const supabase = createClient();
+    const supabase = createAdminClient() || createClient();
     const { data, error } = await supabase
       .from('products')
       .select('*, category:categories(*), variants:product_variants(*)')
@@ -163,7 +163,7 @@ function isRealUuid(id: string): boolean {
 
 export async function saveProduct(product: Partial<Product>): Promise<Product> {
   if (isSupabaseConfigured()) {
-    const supabase = createClient();
+    const supabase = createAdminClient() || createClient();
     if (product.id && isRealUuid(product.id)) {
       // Update existing row
       const { data, error } = await supabase.from('products').update(product).eq('id', product.id).select('*, category:categories(*)').single();

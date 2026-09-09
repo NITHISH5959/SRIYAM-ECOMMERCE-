@@ -6,8 +6,9 @@ import { getAllProductsAdmin, getCategories } from '@/lib/data';
 import { deleteProductAction, revalidateStorefront } from '@/app/actions';
 import ProductModal from '@/components/admin/ProductModal';
 import PlaceholderImage from '@/components/ui/PlaceholderImage';
-import { Plus, Edit2, Trash2, Search, PackageCheck, AlertCircle, RefreshCw } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, PackageCheck, AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
 import { STORE_CONFIG } from '@/lib/config';
+import { saveProductAction } from '@/app/actions';
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -52,6 +53,28 @@ export default function AdminProductsPage() {
       } catch (err: any) {
         alert(`Failed to delete product: ${err?.message || 'Unknown error'}`);
       }
+    }
+  };
+
+  const handleToggleFeatured = async (product: Product) => {
+    const nextVal = !product.is_featured;
+    setProducts((prev) =>
+      prev.map((p) => (p.id === product.id ? { ...p, is_featured: nextVal } : p))
+    );
+    try {
+      const res = await saveProductAction({
+        id: product.id,
+        name: product.name,
+        slug: product.slug,
+        is_featured: nextVal,
+      });
+      if (!res.success) {
+        console.error('Failed to toggle featured:', res.error);
+        await loadData();
+      }
+    } catch (err) {
+      console.error('Toggle featured error:', err);
+      await loadData();
     }
   };
 
@@ -144,6 +167,7 @@ export default function AdminProductsPage() {
                 <th className="py-3.5 px-4">Price</th>
                 <th className="py-3.5 px-4">MRP</th>
                 <th className="py-3.5 px-4">Stock</th>
+                <th className="py-3.5 px-4">Featured</th>
                 <th className="py-3.5 px-4">Status</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
@@ -151,7 +175,7 @@ export default function AdminProductsPage() {
             <tbody className="divide-y divide-zinc-100">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-zinc-400">
+                  <td colSpan={8} className="py-12 text-center text-zinc-400">
                     No products matching criteria.
                   </td>
                 </tr>
@@ -219,6 +243,23 @@ export default function AdminProductsPage() {
                         >
                           {product.stock} units
                         </span>
+                      </td>
+
+                      {/* Featured Masterpiece */}
+                      <td className="py-3 px-4">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFeatured(product)}
+                          title={product.is_featured ? 'Click to unfeature from homepage' : 'Click to feature on homepage (Masterpiece)'}
+                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+                            product.is_featured
+                              ? 'bg-amber-100 text-amber-900 border-amber-300 shadow-sm hover:bg-amber-200'
+                              : 'bg-zinc-50 text-zinc-400 border-zinc-200 hover:text-zinc-700 hover:bg-zinc-100'
+                          }`}
+                        >
+                          <Sparkles className={`w-3 h-3 ${product.is_featured ? 'text-amber-700 fill-amber-700' : 'text-zinc-400'}`} />
+                          <span>{product.is_featured ? 'Featured' : 'Standard'}</span>
+                        </button>
                       </td>
 
                       {/* Status */}

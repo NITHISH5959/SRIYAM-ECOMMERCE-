@@ -22,7 +22,8 @@ export const metadata: Metadata = {
   },
 };
 
-export const revalidate = 60; // ISR revalidate every 60 seconds
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 function formatCategoryPreview(productNames: string[], categorySlug: string): string {
   if (productNames.length === 0) {
