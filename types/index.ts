@@ -28,6 +28,7 @@ export interface Product {
   category_id: string | null;
   weight_grams?: number;
   is_active: boolean;
+  is_featured?: boolean;
   created_at?: string;
   category?: Category;
   // Attached on product-detail fetch for Frame products

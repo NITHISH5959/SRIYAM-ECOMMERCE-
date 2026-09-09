@@ -7,18 +7,18 @@ export const INITIAL_CATEGORIES: Category[] = [
 ];
 
 export const INITIAL_PRODUCTS: Product[] = [
-  { id: 'p1', name: '3 Rajas', slug: '3-rajas', description: 'Sacred artwork depicting the divine triad of celestial rulers in traditional gold foil framing.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, category: INITIAL_CATEGORIES[0] },
-  { id: 'p2', name: 'Natarajar with Naalvar', slug: 'natarajar-with-naalvar', description: 'Lord Natarajar in cosmic dance flanked by the revered Tamil Saivite saint poets (Naalvar).', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, category: INITIAL_CATEGORIES[0] },
-  { id: 'p3', name: 'Uthiraapathiyaar', slug: 'uthiraapathiyaar', description: 'Auspicious portrait of Lord Shiva as Uthiraapathiyaar from sacred temple iconography.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, category: INITIAL_CATEGORIES[0] },
-  { id: 'p4', name: 'Thiruvaarur Thiyagarajar', slug: 'thiruvaarur-thiyagarajar', description: 'Reverently framed representation of Thiruvaarur Lord Thiyagarajar in divine majesty.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, category: INITIAL_CATEGORIES[0] },
-  { id: 'p5', name: 'Panja Sabai', slug: 'panja-sabai', description: 'Heritage frame illustrating the five cosmic dance halls (Panja Sabai) of Lord Shiva.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, category: INITIAL_CATEGORIES[0] },
-  { id: 'p6', name: 'Aaru Padai Veedu', slug: 'aaru-padai-veedu', description: 'Grand frame capturing the six sacred abodes (Aaru Padai Veedu) of Lord Murugan.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, category: INITIAL_CATEGORIES[0] },
-  { id: 'p7', name: 'Pancha Bootham', slug: 'pancha-bootham', description: 'Sacred frame art representing the five elemental Shiva temples (Pancha Bootha Sthalangal).', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, category: INITIAL_CATEGORIES[0] },
-  { id: 'p8', name: 'Pancha Bootham Map', slug: 'pancha-bootham-map', description: 'Detailed geographic and spiritual mapping frame of the 5 elemental temples.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, category: INITIAL_CATEGORIES[0] },
-  { id: 'p9', name: '3 Sakthi', slug: '3-sakthi', description: 'Spiritual frame celebrating the divine triad of Goddesses Lakshmi, Saraswati, and Parvati.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, category: INITIAL_CATEGORIES[0] },
-  { id: 'p10', name: '276 Paadal Petra Sthalam', slug: '276-paadal-petra-sthalam', description: 'Comprehensive archival poster listing all 276 Paadal Petra Shiva Sthalams with temple details.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '22222222-2222-2222-2222-222222222222', weight_grams: 200, is_active: true, category: INITIAL_CATEGORIES[1] },
-  { id: 'p11', name: '108 Divya Desam', slug: '108-divya-desam', description: 'Sacred poster enumerating the 108 Divya Desams glorified in the Naalayira Divya Prabandham.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '22222222-2222-2222-2222-222222222222', weight_grams: 200, is_active: true, category: INITIAL_CATEGORIES[1] },
-  { id: 'p12', name: '51 Sakthi Peedam', slug: '51-sakthi-peedam', description: 'Detailed heritage poster mapping the 51 Shakti Peethas with pilgrimage reference details.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '22222222-2222-2222-2222-222222222222', weight_grams: 200, is_active: true, category: INITIAL_CATEGORIES[1] },
+  { id: 'p1', name: '3 Rajas', slug: '3-rajas', description: 'Sacred artwork depicting the divine triad of celestial rulers in traditional gold foil framing.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[0] },
+  { id: 'p2', name: 'Natarajar with Naalvar', slug: 'natarajar-with-naalvar', description: 'Lord Natarajar in cosmic dance flanked by the revered Tamil Saivite saint poets (Naalvar).', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[0] },
+  { id: 'p3', name: 'Uthiraapathiyaar', slug: 'uthiraapathiyaar', description: 'Auspicious portrait of Lord Shiva as Uthiraapathiyaar from sacred temple iconography.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[0] },
+  { id: 'p4', name: 'Thiruvaarur Thiyagarajar', slug: 'thiruvaarur-thiyagarajar', description: 'Reverently framed representation of Thiruvaarur Lord Thiyagarajar in divine majesty.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[0] },
+  { id: 'p5', name: 'Panja Sabai', slug: 'panja-sabai', description: 'Heritage frame illustrating the five cosmic dance halls (Panja Sabai) of Lord Shiva.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[0] },
+  { id: 'p6', name: 'Aaru Padai Veedu', slug: 'aaru-padai-veedu', description: 'Grand frame capturing the six sacred abodes (Aaru Padai Veedu) of Lord Murugan.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[0] },
+  { id: 'p7', name: 'Pancha Bootham', slug: 'pancha-bootham', description: 'Sacred frame art representing the five elemental Shiva temples (Pancha Bootha Sthalangal).', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[0] },
+  { id: 'p8', name: 'Pancha Bootham Map', slug: 'pancha-bootham-map', description: 'Detailed geographic and spiritual mapping frame of the 5 elemental temples.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[0] },
+  { id: 'p9', name: '3 Sakthi', slug: '3-sakthi', description: 'Spiritual frame celebrating the divine triad of Goddesses Lakshmi, Saraswati, and Parvati.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '11111111-1111-1111-1111-111111111111', weight_grams: 300, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[0] },
+  { id: 'p10', name: '276 Paadal Petra Sthalam', slug: '276-paadal-petra-sthalam', description: 'Comprehensive archival poster listing all 276 Paadal Petra Shiva Sthalams with temple details.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '22222222-2222-2222-2222-222222222222', weight_grams: 200, is_active: true, is_featured: true, category: INITIAL_CATEGORIES[1] },
+  { id: 'p11', name: '108 Divya Desam', slug: '108-divya-desam', description: 'Sacred poster enumerating the 108 Divya Desams glorified in the Naalayira Divya Prabandham.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '22222222-2222-2222-2222-222222222222', weight_grams: 200, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[1] },
+  { id: 'p12', name: '51 Sakthi Peedam', slug: '51-sakthi-peedam', description: 'Detailed heritage poster mapping the 51 Shakti Peethas with pilgrimage reference details.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '22222222-2222-2222-2222-222222222222', weight_grams: 200, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[1] },
 ];
 
 export const INITIAL_COUPONS: Coupon[] = [
@@ -70,8 +70,8 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
     const supabase = createClient();
     const isFiltered = categorySlug && categorySlug !== 'all';
     const selectClause = isFiltered
-      ? 'id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories!inner(id, name, slug)'
-      : 'id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories(id, name, slug)';
+      ? '*, category:categories!inner(*)'
+      : '*, category:categories(*)';
     let query = supabase.from('products').select(selectClause).eq('is_active', true);
     if (isFiltered) {
       query = query.eq('category.slug', categorySlug);
@@ -87,11 +87,25 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
   return result;
 }
 
+export async function getFeaturedProducts(): Promise<Product[]> {
+  try {
+    const all = await getProducts();
+    const featured = all.filter((p) => p.is_featured === true);
+    return featured;
+  } catch (err) {
+    console.error('[getFeaturedProducts error]', err);
+    return [];
+  }
+}
+
 export async function getAllProductsAdmin(): Promise<Product[]> {
   try {
     if (!isSupabaseConfigured()) return memoryProducts;
     const supabase = createClient();
-    const { data, error } = await supabase.from('products').select('id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories(id, name, slug)').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('products')
+      .select('*, category:categories(*)')
+      .order('created_at', { ascending: false });
     if (!error && data && data.length > 0) return data as unknown as Product[];
   } catch {}
   return memoryProducts;
@@ -110,7 +124,7 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
     const supabase = createClient();
     const { data, error } = await supabase
       .from('products')
-      .select('id, name, slug, description, price, compare_at_price, images, stock, category_id, weight_grams, is_active, created_at, category:categories(id, name, slug), variants:product_variants(id, product_id, size, price, compare_at_price, stock, is_active)')
+      .select('*, category:categories(*), variants:product_variants(*)')
       .eq('slug', slug)
       .single();
 
@@ -172,10 +186,11 @@ export async function saveProduct(product: Partial<Product>): Promise<Product> {
   const cat = memoryCategories.find(c => c.id === product.category_id);
   const newProduct: Product = {
     id: `p_${Date.now()}`, name: product.name || 'Untitled', slug: product.slug || `product-${Date.now()}`,
-    description: product.description || '', price: Number(product.price) || 599,
-    compare_at_price: Number(product.compare_at_price) || 649, images: product.images || [],
+    description: product.description || '', price: Number(product.price) || 0,
+    compare_at_price: Number(product.compare_at_price) || 0, images: product.images || [],
     stock: Number(product.stock) || 0, category_id: product.category_id || null,
-    weight_grams: Number(product.weight_grams) || 300, is_active: product.is_active ?? true, category: cat,
+    weight_grams: Number(product.weight_grams) || 300, is_active: product.is_active ?? true,
+    is_featured: product.is_featured ?? false, category: cat,
   };
   memoryProducts = [newProduct, ...memoryProducts];
   return newProduct;

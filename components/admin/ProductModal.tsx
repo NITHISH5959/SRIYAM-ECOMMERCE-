@@ -15,6 +15,7 @@ import {
   Trash2,
   ImagePlus,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 
 interface ProductModalProps {
@@ -64,13 +65,14 @@ export default function ProductModal({
     name: '',
     slug: '',
     description: '',
-    price: 599,
-    compare_at_price: 649,
+    price: '' as unknown as number,
+    compare_at_price: '' as unknown as number,
     images: [],
     stock: 10,
     category_id: categories[0]?.id || '',
     weight_grams: 300,
     is_active: true,
+    is_featured: false,
   });
 
   const [variants, setVariants] = useState<VariantRow[]>(DEFAULT_VARIANTS.map(v => ({ ...v })));
@@ -94,19 +96,25 @@ export default function ProductModal({
   // ── Reset on open/productToEdit change ──────────────────────────────────────
   useEffect(() => {
     if (productToEdit) {
-      setFormData({ ...productToEdit });
+      setFormData({
+        ...productToEdit,
+        price: productToEdit.price,
+        compare_at_price: productToEdit.compare_at_price,
+        is_featured: productToEdit.is_featured ?? false,
+      });
     } else {
       setFormData({
         name: '',
         slug: '',
         description: '',
-        price: 599,
-        compare_at_price: 649,
+        price: '' as unknown as number,
+        compare_at_price: '' as unknown as number,
         images: [],
         stock: 10,
         category_id: categories[0]?.id || '',
         weight_grams: 300,
         is_active: true,
+        is_featured: false,
       });
     }
     setVariants(DEFAULT_VARIANTS.map(v => ({ ...v })));
@@ -191,8 +199,6 @@ export default function ProductModal({
             })
           );
         }
-        // If no variants found, keep the current defaults —
-        // this product is being assigned to Frames for the first time.
       })
       .finally(() => setLoadingVariants(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -312,6 +318,17 @@ export default function ProductModal({
     e.preventDefault();
     setIsSaving(true);
     setGlobalError(null);
+
+    // Validation for products without variants (e.g. Rack Posters)
+    if (!isFramesProduct) {
+      const p = Number(formData.price);
+      if (isNaN(p) || p <= 0 || formData.price === '' as any || formData.price === undefined || formData.price === null) {
+        setGlobalError('Please enter a valid price in ₹ for this product.');
+        setIsSaving(false);
+        return;
+      }
+    }
+
     try {
       // For Frames: set products.price to min variant price (powers "From ₹" on cards)
       let productToSave = { ...formData, images: formData.images || [] };
@@ -319,6 +336,12 @@ export default function ProductModal({
         const minPrice = Math.min(...variants.map(v => v.price));
         const minMrp = Math.min(...variants.map(v => v.compare_at_price));
         productToSave = { ...productToSave, price: minPrice, compare_at_price: minMrp };
+      } else {
+        productToSave = {
+          ...productToSave,
+          price: Number(formData.price) || 0,
+          compare_at_price: formData.compare_at_price ? Number(formData.compare_at_price) : Number(formData.price) || 0,
+        };
       }
 
       const res = await saveProductAction(productToSave, isFramesProduct ? variants : undefined);
@@ -371,13 +394,13 @@ export default function ProductModal({
             <div className="space-y-1">
               <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Product Name *</label>
               <input type="text" required value={formData.name || ''} onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="e.g. 3 Rajas Frame"
+                placeholder="e.g. 276 Paadal Petra Sthalam"
                 className="w-full border border-zinc-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none" />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">URL Slug *</label>
               <input type="text" required value={formData.slug || ''} onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                placeholder="e.g. 3-rajas"
+                placeholder="e.g. 276-paadal-petra-sthalam"
                 className="w-full border border-zinc-300 rounded-lg px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-amber-700 focus:outline-none" />
             </div>
           </div>
@@ -394,15 +417,26 @@ export default function ProductModal({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Price (₹) *</label>
-                <input type="number" required min="0" value={formData.price ?? 599}
-                  onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
-                  className="w-full border border-zinc-300 rounded-lg px-3 py-2 text-xs font-bold text-zinc-900 focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  placeholder="e.g. 499"
+                  value={formData.price !== undefined && formData.price !== null && formData.price !== ('' as any) ? formData.price : ''}
+                  onChange={(e) => setFormData({ ...formData, price: e.target.value === '' ? ('' as any) : Number(e.target.value) })}
+                  className="w-full border border-zinc-300 rounded-lg px-3 py-2 text-xs font-bold text-zinc-900 focus:ring-2 focus:ring-amber-700 focus:outline-none"
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">MRP (₹)</label>
-                <input type="number" min="0" value={formData.compare_at_price ?? 649}
-                  onChange={(e) => setFormData({ ...formData, compare_at_price: Number(e.target.value) })}
-                  className="w-full border border-zinc-300 rounded-lg px-3 py-2 text-xs text-zinc-600 focus:ring-2 focus:ring-amber-700 focus:outline-none" />
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 549"
+                  value={formData.compare_at_price !== undefined && formData.compare_at_price !== null && formData.compare_at_price !== ('' as any) ? formData.compare_at_price : ''}
+                  onChange={(e) => setFormData({ ...formData, compare_at_price: e.target.value === '' ? ('' as any) : Number(e.target.value) })}
+                  className="w-full border border-zinc-300 rounded-lg px-3 py-2 text-xs text-zinc-600 focus:ring-2 focus:ring-amber-700 focus:outline-none"
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Stock *</label>
@@ -439,12 +473,22 @@ export default function ProductModal({
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <div className="space-y-1 flex flex-col justify-end">
+            <div className="grid grid-cols-1 gap-2">
               <label className="flex items-center gap-2 cursor-pointer p-2 border border-zinc-200 rounded-lg bg-zinc-50 hover:bg-zinc-100">
                 <input type="checkbox" checked={formData.is_active ?? true}
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                   className="w-4 h-4 text-amber-800 rounded border-zinc-300 focus:ring-amber-700" />
                 <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider">Active (Visible on Storefront)</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer p-2 border border-amber-200 rounded-lg bg-amber-50/70 hover:bg-amber-100/70 transition-colors">
+                <input type="checkbox" checked={formData.is_featured ?? false}
+                  onChange={(e) => setFormData({ ...formData, is_featured: e.target.checked })}
+                  className="w-4 h-4 text-amber-800 rounded border-amber-300 focus:ring-amber-700" />
+                <span className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Feature on Homepage (Masterpiece)</span>
+                </span>
               </label>
             </div>
           </div>

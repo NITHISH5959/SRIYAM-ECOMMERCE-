@@ -76,7 +76,7 @@ export async function saveProductAction(
       .replace(/[\s_-]+/g, '-')
       .replace(/^-+|-+$/g, '') || `product-${Date.now()}`;
 
-    const cleanPayload = {
+    const cleanPayload: Record<string, any> = {
       name,
       slug: cleanSlug,
       description: productData.description?.trim() || null,
@@ -87,6 +87,7 @@ export async function saveProductAction(
       category_id: productData.category_id && isRealUuid(productData.category_id) ? productData.category_id : null,
       weight_grams: Math.max(0, Number(productData.weight_grams) || 300),
       is_active: productData.is_active ?? true,
+      is_featured: productData.is_featured ?? false,
     };
 
     const adminSupabase = createAdminClient();
@@ -106,33 +107,43 @@ export async function saveProductAction(
 
     let savedProduct: Product;
 
-    // 3. Product Insert or Update via adminSupabase
-    if (productData.id && isRealUuid(productData.id)) {
-      const { data, error } = await adminSupabase
-        .from('products')
-        .update(cleanPayload)
-        .eq('id', productData.id)
-        .select('*, category:categories(*)')
-        .single();
-
-      if (error) {
-        console.error('[saveProductAction update error]', error);
-        return { success: false, error: `Failed to update product in database: ${error.message}` };
+    // Helper to perform upsert/insert with graceful retry if is_featured column is not yet migrated
+    async function executeSave(payload: Record<string, any>): Promise<{ data: Product | null; error: any }> {
+      if (productData.id && isRealUuid(productData.id)) {
+        const res = await adminSupabase!
+          .from('products')
+          .update(payload)
+          .eq('id', productData.id)
+          .select('*, category:categories(*)')
+          .single();
+        return { data: res.data as Product, error: res.error };
+      } else {
+        const res = await adminSupabase!
+          .from('products')
+          .insert([payload])
+          .select('*, category:categories(*)')
+          .single();
+        return { data: res.data as Product, error: res.error };
       }
-      savedProduct = data as Product;
-    } else {
-      const { data, error } = await adminSupabase
-        .from('products')
-        .insert([cleanPayload])
-        .select('*, category:categories(*)')
-        .single();
-
-      if (error) {
-        console.error('[saveProductAction insert error]', error);
-        return { success: false, error: `Failed to insert product into database: ${error.message}` };
-      }
-      savedProduct = data as Product;
     }
+
+    // 3. Product Insert or Update via adminSupabase
+    let { data, error } = await executeSave(cleanPayload);
+
+    // If is_featured column is not yet created in the DB, retry without is_featured
+    if (error && (error.message?.includes('is_featured') || error.code === 'PGRST204' || error.code === '42703')) {
+      console.warn('[saveProductAction] is_featured column not found in database, falling back without is_featured');
+      const { is_featured, ...fallbackPayload } = cleanPayload;
+      const retry = await executeSave(fallbackPayload);
+      data = retry.data;
+      error = retry.error;
+    }
+
+    if (error || !data) {
+      console.error('[saveProductAction error]', error);
+      return { success: false, error: `Failed to save product to database: ${error?.message || 'Unknown database error'}` };
+    }
+    savedProduct = data;
 
     // 4. Variant rows upsert (e.g. A3 & A4 variants for Frames)
     if (variantsData && variantsData.length > 0 && savedProduct.id) {

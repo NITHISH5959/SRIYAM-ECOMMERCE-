@@ -37,7 +37,7 @@ export default function Footer() {
             <div className="space-y-2 pt-1 text-[11px] text-zinc-400">
               <div className="flex items-center gap-2">
                 <Truck className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                <span>Free Delivery on orders over ₹999</span>
+                <span>Flat ₹50 Delivery Across India</span>
               </div>
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
@@ -81,24 +81,46 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* Contact Details */}
-          <div className="space-y-3">
-            <h4 className="text-zinc-200 font-semibold uppercase tracking-wider text-[11px]">
-              Contact Us
-            </h4>
-            <p className="text-zinc-400 leading-relaxed space-y-1">
-              <span>Email: {STORE_CONFIG.contact.email}</span>
-              <br />
-              <span>Phone: {STORE_CONFIG.contact.phone}</span>
-              <br />
-              <span>Location: {STORE_CONFIG.contact.location}</span>
-            </p>
+          {/* Contact Details & Policies */}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h4 className="text-zinc-200 font-semibold uppercase tracking-wider text-[11px]">
+                Contact Us
+              </h4>
+              <p className="text-zinc-400 leading-relaxed text-xs space-y-1">
+                <span>Email: <a href={`mailto:${STORE_CONFIG.contact.email}`} className="text-zinc-300 hover:text-amber-400 underline">{STORE_CONFIG.contact.email}</a></span>
+                <br />
+                <span>Phone: {STORE_CONFIG.contact.phone}</span>
+                <br />
+                <span>Location: {STORE_CONFIG.contact.location}</span>
+              </p>
+            </div>
+
+            <div className="space-y-1.5 pt-2 border-t border-zinc-900">
+              <h4 className="text-zinc-300 font-semibold uppercase tracking-wider text-[10px]">
+                Policies & Legal
+              </h4>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                <Link href="/terms" className="text-zinc-400 hover:text-amber-400 transition-colors">
+                  Terms & Conditions
+                </Link>
+                <Link href="/privacy" className="text-zinc-400 hover:text-amber-400 transition-colors">
+                  Privacy Policy
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Copyright */}
         <div className="mt-12 pt-6 border-t border-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-zinc-500 text-[11px]">
-          <p>© {new Date().getFullYear()} {STORE_CONFIG.name}. All rights reserved.</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <p>© {new Date().getFullYear()} {STORE_CONFIG.name}. All rights reserved.</p>
+            <span>·</span>
+            <Link href="/terms" className="hover:text-zinc-300 transition-colors">Terms</Link>
+            <span>·</span>
+            <Link href="/privacy" className="hover:text-zinc-300 transition-colors">Privacy</Link>
+          </div>
           <div className="flex items-center gap-1">
             <span>Crafted with</span>
             <Heart className="w-3 h-3 text-amber-600 fill-amber-600" />

@@ -132,3 +132,11 @@ create trigger on_auth_user_created
 -- ---- Verify ----
 select 'Trigger installed:' as check, count(*) as result
 from pg_trigger where tgname = 'on_auth_user_created';
+
+-- =============================================
+-- MIGRATION: Featured products & Manual pricing
+-- Run this in Supabase SQL Editor:
+-- =============================================
+alter table public.products add column if not exists is_featured boolean not null default false;
+alter table public.products alter column price drop default;
+alter table public.products alter column compare_at_price drop default;

@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { getProducts, getCategories } from '@/lib/data';
 import ProductCard from '@/components/products/ProductCard';
+import FeaturedMasterpiece from '@/components/home/FeaturedMasterpiece';
 import { STORE_CONFIG } from '@/lib/config';
 import { ArrowRight, Sparkles, Truck, Shield, Award, MessageCircle, Frame, MapPin } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -29,17 +30,19 @@ export default async function HomePage() {
     getCategories(),
   ]);
 
+  const featuredMasterpieces = products.filter((p) => p.is_featured);
   const featuredProducts = products.slice(0, 8);
+  const hasMasterpiece = featuredMasterpieces.length > 0;
 
   return (
     <div className="space-y-16 lg:space-y-24 pb-16">
       {/* Hero Banner */}
       <section className="relative overflow-hidden bg-gradient-to-b from-amber-50/60 via-zinc-50 to-white py-16 sm:py-24 border-b border-zinc-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+          <div className={`grid grid-cols-1 ${hasMasterpiece ? 'lg:grid-cols-12 gap-12 items-center' : 'max-w-4xl mx-auto text-center'}`}>
             
             {/* Left Content */}
-            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+            <div className={`${hasMasterpiece ? 'lg:col-span-7 text-center lg:text-left' : 'text-center'} space-y-6`}>
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100/80 text-amber-900 border border-amber-200/80 rounded-full text-xs font-semibold uppercase tracking-widest">
                 <Sparkles className="w-3.5 h-3.5 text-amber-700" />
                 <span>Original Sacred Heritage Collection</span>
@@ -49,11 +52,11 @@ export default async function HomePage() {
                 Sacred Art Frames & <span className="text-amber-800 underline decoration-amber-300 underline-offset-8">Heritage Posters</span>
               </h1>
 
-              <p className="text-base sm:text-lg text-zinc-600 max-w-2xl mx-auto lg:mx-0 font-normal leading-relaxed">
+              <p className={`text-base sm:text-lg text-zinc-600 ${hasMasterpiece ? 'max-w-2xl mx-auto lg:mx-0' : 'max-w-2xl mx-auto'} font-normal leading-relaxed`}>
                 Bring divine serenity to your home with our carefully crafted Paadal Petra Sthalam posters, 108 Divya Desam guides, and sacred temple frames.
               </p>
 
-              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
+              <div className={`pt-2 flex flex-col sm:flex-row items-center justify-center ${hasMasterpiece ? 'lg:justify-start' : ''} gap-4`}>
                 <Link
                   href="/shop"
                   className="w-full sm:w-auto px-8 py-3.5 bg-zinc-900 text-white font-semibold text-xs uppercase tracking-widest rounded-lg hover:bg-amber-800 transition-colors duration-200 shadow-md flex items-center justify-center gap-2 group"
@@ -72,46 +75,28 @@ export default async function HomePage() {
               </div>
 
               {/* Trust Indicators */}
-              <div className="pt-6 grid grid-cols-3 gap-4 border-t border-zinc-200/60 max-w-lg mx-auto lg:mx-0 text-left">
+              <div className={`pt-6 grid grid-cols-3 gap-4 border-t border-zinc-200/60 max-w-lg ${hasMasterpiece ? 'mx-auto lg:mx-0' : 'mx-auto'} text-left`}>
                 <div>
                   <p className="text-lg font-bold text-zinc-900">100%</p>
                   <p className="text-[11px] text-zinc-500 font-medium">Sacred Accuracy</p>
                 </div>
                 <div>
-                  <p className="text-lg font-bold text-zinc-900">₹599</p>
-                  <p className="text-[11px] text-zinc-500 font-medium">Standard Pricing</p>
+                  <p className="text-lg font-bold text-zinc-900">₹50</p>
+                  <p className="text-[11px] text-zinc-500 font-medium">Flat Delivery Fee</p>
                 </div>
                 <div>
-                  <p className="text-lg font-bold text-zinc-900">Free</p>
-                  <p className="text-[11px] text-zinc-500 font-medium">Shipping &gt; ₹999</p>
+                  <p className="text-lg font-bold text-zinc-900">Archival</p>
+                  <p className="text-[11px] text-zinc-500 font-medium">Premium Print Craft</p>
                 </div>
               </div>
             </div>
 
-            {/* Right Visual Highlight */}
-            <div className="lg:col-span-5 relative">
-              <div className="relative mx-auto max-w-md bg-white p-6 rounded-2xl shadow-xl border border-zinc-200/80">
-                <div className="aspect-[4/5] bg-gradient-to-br from-amber-50 via-stone-100 to-amber-100/50 rounded-xl flex flex-col items-center justify-center p-8 text-center border border-amber-200/50">
-                  <div className="w-16 h-16 rounded-full bg-white shadow-md flex items-center justify-center text-amber-800 mb-4">
-                    <MapPin className="w-8 h-8 stroke-[1.5]" />
-                  </div>
-                  <span className="text-xs font-bold text-amber-900 uppercase tracking-widest mb-1">
-                    Featured Masterpiece
-                  </span>
-                  <h3 className="text-xl font-serif font-bold text-zinc-900 mb-2">
-                    276 Paadal Petra Sthalam
-                  </h3>
-                  <p className="text-xs text-zinc-500 max-w-xs mb-4">
-                    Archival quality poster listing all 276 revered Shiva temples across South India.
-                  </p>
-                  <div className="flex items-center gap-2 bg-white px-4 py-1.5 rounded-full shadow-sm border border-zinc-200">
-                    <span className="text-xs font-bold text-amber-800">Special Offer</span>
-                    <span className="text-xs text-zinc-400 line-through">₹649</span>
-                    <span className="text-sm font-extrabold text-zinc-900">₹599</span>
-                  </div>
-                </div>
+            {/* Right Visual Highlight — Dynamic Masterpiece */}
+            {hasMasterpiece && (
+              <div className="lg:col-span-5 relative">
+                <FeaturedMasterpiece products={featuredMasterpieces} />
               </div>
-            </div>
+            )}
 
           </div>
         </div>

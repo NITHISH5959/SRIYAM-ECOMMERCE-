@@ -12,7 +12,7 @@ export const STORE_CONFIG = {
   freeShippingThreshold: 999,
   defaultShippingFee: 50,
   contact: {
-    email: "support@sriyamstore.com",
+    email: "srisridharguru@gmail.com",
     phone: "+91 88703 08265",
     location: "Dharmapuri, Tamil Nadu",
   },
