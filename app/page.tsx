@@ -24,6 +24,29 @@ export const metadata: Metadata = {
 
 export const revalidate = 60; // ISR revalidate every 60 seconds
 
+function formatCategoryPreview(productNames: string[], categorySlug: string): string {
+  if (productNames.length === 0) {
+    if (categorySlug === 'frames') {
+      return 'Authentic sacred temple frames crafted with divine reverence and premium framing.';
+    }
+    return 'Archival pilgrimage guides and sacred heritage posters for temple seekers.';
+  }
+
+  let joined = '';
+  if (productNames.length === 1) {
+    joined = productNames[0];
+  } else if (productNames.length === 2) {
+    joined = `${productNames[0]} and ${productNames[1]}`;
+  } else {
+    joined = `${productNames.slice(0, -1).join(', ')}, and ${productNames[productNames.length - 1]}`;
+  }
+
+  if (categorySlug === 'frames') {
+    return `${joined} framed with divine elegance.`;
+  }
+  return `${joined} posters for temple enthusiasts & seekers.`;
+}
+
 export default async function HomePage() {
   const [products, categories] = await Promise.all([
     getProducts(),
@@ -31,8 +54,29 @@ export default async function HomePage() {
   ]);
 
   const featuredMasterpieces = products.filter((p) => p.is_featured);
-  const featuredProducts = products.slice(0, 8);
   const hasMasterpiece = featuredMasterpieces.length > 0;
+
+  // Derive dynamic category metrics in-memory (0 extra queries)
+  const frameCategory = categories.find((c) => c.slug === 'frames');
+  const frameProducts = products.filter(
+    (p) => p.category_id === frameCategory?.id || p.category?.slug === 'frames'
+  );
+  const frameCount = frameProducts.length;
+  const frameNames = frameProducts.slice(0, 4).map((p) => p.name);
+  const framePreview = formatCategoryPreview(frameNames, 'frames');
+
+  const posterCategory = categories.find((c) => c.slug === 'rack-posters');
+  const posterProducts = products.filter(
+    (p) => p.category_id === posterCategory?.id || p.category?.slug === 'rack-posters'
+  );
+  const posterCount = posterProducts.length;
+  const posterNames = posterProducts.slice(0, 4).map((p) => p.name);
+  const posterPreview = formatCategoryPreview(posterNames, 'rack-posters');
+
+  // Featured products grid display
+  const displayedProducts = featuredMasterpieces.length > 0
+    ? (featuredMasterpieces.length >= 4 ? featuredMasterpieces : [...featuredMasterpieces, ...products.filter(p => !p.is_featured)].slice(0, 8))
+    : products.slice(0, 8);
 
   return (
     <div className="space-y-16 lg:space-y-24 pb-16">
@@ -124,17 +168,17 @@ export default async function HomePage() {
             </div>
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200/60 inline-block mb-4">
-                9 Premium Items
+                {frameCount} Premium {frameCount === 1 ? 'Item' : 'Items'}
               </span>
               <h3 className="text-2xl font-serif font-bold text-zinc-900 group-hover:text-amber-800 transition-colors mb-2">
                 Sacred Frames
               </h3>
-              <p className="text-sm text-zinc-600 max-w-md">
-                3 Rajas, Natarajar with Naalvar, Panja Sabai, Aaru Padai Veedu, and 3 Sakthi framed with divine elegance.
+              <p className="text-sm text-zinc-600 max-w-md leading-relaxed">
+                {framePreview}
               </p>
             </div>
             <div className="mt-8 flex items-center gap-2 text-xs font-bold text-zinc-900 uppercase tracking-widest group-hover:text-amber-800">
-              <span>View Frames</span>
+              <span>View Frames ({frameCount})</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </div>
           </Link>
@@ -149,17 +193,17 @@ export default async function HomePage() {
             </div>
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200/60 inline-block mb-4">
-                3 Archival Posters
+                {posterCount} Archival {posterCount === 1 ? 'Poster' : 'Posters'}
               </span>
               <h3 className="text-2xl font-serif font-bold text-zinc-900 group-hover:text-amber-800 transition-colors mb-2">
                 Heritage Rack Posters
               </h3>
-              <p className="text-sm text-zinc-600 max-w-md">
-                276 Paadal Petra Sthalam, 108 Divya Desam, and 51 Sakthi Peedam posters for temple enthusiasts & seekers.
+              <p className="text-sm text-zinc-600 max-w-md leading-relaxed">
+                {posterPreview}
               </p>
             </div>
             <div className="mt-8 flex items-center gap-2 text-xs font-bold text-zinc-900 uppercase tracking-widest group-hover:text-amber-800">
-              <span>View Rack Posters</span>
+              <span>View Rack Posters ({posterCount})</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </div>
           </Link>
@@ -187,7 +231,7 @@ export default async function HomePage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {featuredProducts.map((product) => (
+          {displayedProducts.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}
         </div>
