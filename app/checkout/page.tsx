@@ -307,12 +307,12 @@ export default function CheckoutPage() {
         currency: orderData.currency || 'INR',
         name: STORE_CONFIG.name,
         description: 'Payment for Sriyam Store Order',
-        image: '/logo.png',
+        image: typeof window !== 'undefined' ? `${window.location.origin}/logo.png` : undefined,
         order_id: orderData.id,
         prefill: {
-          name: selectedAddress.name || user?.name,
-          email: user?.email,
-          contact: selectedAddress.phone,
+          name: selectedAddress.name || user?.name || '',
+          email: user?.email || '',
+          contact: selectedAddress.phone || '',
         },
         theme: { color: '#92400e' },
         handler: function (response: any) {
