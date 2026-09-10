@@ -237,8 +237,13 @@ export async function deleteProductAction(id: string): Promise<ActionResponse<bo
     }
 
     try {
+      await deleteProduct(id);
+    } catch {}
+
+    try {
       revalidatePath('/');
       revalidatePath('/shop');
+      revalidatePath('/cart');
       revalidatePath('/sriyamadmin/products');
     } catch (err) {
       console.error('Failed to revalidate cache paths:', err);

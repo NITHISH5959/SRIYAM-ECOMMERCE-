@@ -49,12 +49,13 @@ function formatCategoryPreview(productNames: string[], categorySlug: string): st
 }
 
 export default async function HomePage() {
-  const [products, categories] = await Promise.all([
+  const [rawProducts, categories] = await Promise.all([
     getProducts(),
     getCategories(),
   ]);
+  const products = rawProducts.filter((p) => p.is_active !== false);
 
-  const featuredMasterpieces = products.filter((p) => p.is_featured);
+  const featuredMasterpieces = products.filter((p) => p.is_active !== false && p.is_featured);
   const hasMasterpiece = featuredMasterpieces.length > 0;
 
   // Derive dynamic category metrics in-memory (0 extra queries)

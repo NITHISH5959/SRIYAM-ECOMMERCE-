@@ -86,9 +86,11 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
       query = query.eq('category.slug', categorySlug);
     }
     const { data, error } = await query;
-    if (!error && data && data.length > 0) return data as unknown as Product[];
+    if (!error && data) {
+      return (data as unknown as Product[]).filter(p => p.is_active !== false);
+    }
   } catch {}
-  let result = memoryProducts.filter(p => p.is_active);
+  let result = memoryProducts.filter(p => p.is_active !== false);
   if (categorySlug && categorySlug !== 'all') {
     const cat = memoryCategories.find(c => c.slug === categorySlug);
     if (cat) result = result.filter(p => p.category_id === cat.id);
@@ -99,7 +101,7 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
 export async function getFeaturedProducts(): Promise<Product[]> {
   try {
     const all = await getProducts();
-    const featured = all.filter((p) => p.is_featured === true);
+    const featured = all.filter((p) => p.is_active !== false && p.is_featured === true);
     return featured;
   } catch (err) {
     console.error('[getFeaturedProducts error]', err);
@@ -115,32 +117,37 @@ export async function getAllProductsAdmin(): Promise<Product[]> {
       .from('products')
       .select('*, category:categories(*)')
       .order('created_at', { ascending: false });
-    if (!error && data && data.length > 0) return data as unknown as Product[];
+    if (!error && data) return data as unknown as Product[];
   } catch {}
   return memoryProducts;
 }
 
-export async function getProductBySlug(slug: string): Promise<Product | null> {
+export async function getProductBySlug(slug: string, allowInactive = false): Promise<Product | null> {
   try {
     if (!isSupabaseConfigured()) {
-      const p = memoryProducts.find(p => p.slug === slug) || null;
+      const p = memoryProducts.find(p => p.slug === slug && (allowInactive || p.is_active !== false)) || null;
       if (p) {
-        const variants = memoryVariants.filter(v => v.product_id === p.id && v.is_active);
+        const variants = memoryVariants.filter(v => v.product_id === p.id && v.is_active !== false);
         return { ...p, variants: variants.length > 0 ? variants : undefined };
       }
       return null;
     }
     const supabase = createAdminClient() || createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from('products')
       .select('*, category:categories(*), variants:product_variants(*)')
-      .eq('slug', slug)
-      .single();
+      .eq('slug', slug);
+    if (!allowInactive) {
+      query = query.eq('is_active', true);
+    }
+    const { data, error } = await query.single();
 
     if (!error && data) {
       const product = data as unknown as Product;
+      if (!allowInactive && product.is_active === false) return null;
+
       if ((data as any).variants && Array.isArray((data as any).variants)) {
-        const activeVars = ((data as any).variants as ProductVariant[]).filter(v => v.is_active);
+        const activeVars = ((data as any).variants as ProductVariant[]).filter(v => v.is_active !== false);
         if (activeVars.length > 0) {
           product.variants = activeVars.sort((a, b) => a.size.localeCompare(b.size));
         }
@@ -148,9 +155,9 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
       return product;
     }
   } catch {}
-  const p = memoryProducts.find(p => p.slug === slug) || null;
+  const p = memoryProducts.find(p => p.slug === slug && (allowInactive || p.is_active !== false)) || null;
   if (p) {
-    const variants = memoryVariants.filter(v => v.product_id === p.id && v.is_active);
+    const variants = memoryVariants.filter(v => v.product_id === p.id && v.is_active !== false);
     return { ...p, variants: variants.length > 0 ? variants : undefined };
   }
   return null;
@@ -171,7 +178,13 @@ export async function saveProduct(product: Partial<Product>): Promise<Product> {
         console.error('[saveProduct update error]', error);
         throw new Error(error.message || 'Failed to update product in Supabase database');
       }
-      if (data) return data as Product;
+      if (data) {
+        const saved = data as Product;
+        const idx = memoryProducts.findIndex(p => p.id === saved.id);
+        if (idx !== -1) memoryProducts[idx] = saved;
+        else memoryProducts.unshift(saved);
+        return saved;
+      }
     } else {
       // Insert new row
       const { data, error } = await supabase.from('products').insert([product]).select('*, category:categories(*)').single();
@@ -179,7 +192,11 @@ export async function saveProduct(product: Partial<Product>): Promise<Product> {
         console.error('[saveProduct insert error]', error);
         throw new Error(error.message || 'Failed to insert product into Supabase database');
       }
-      if (data) return data as Product;
+      if (data) {
+        const saved = data as Product;
+        memoryProducts.unshift(saved);
+        return saved;
+      }
     }
   }
 

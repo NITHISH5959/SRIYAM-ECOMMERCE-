@@ -38,7 +38,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     getCategories(),
     getProducts(currentCategory),
   ]);
-  let products = rawProducts;
+  let products = rawProducts.filter((p) => p.is_active !== false);
 
   // Sorting logic
   if (currentSort === 'price-low') {

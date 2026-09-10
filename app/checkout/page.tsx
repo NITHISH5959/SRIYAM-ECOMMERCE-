@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Script from 'next/script';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
-import { getAddresses, saveAddress } from '@/lib/data';
+import { getAddresses, saveAddress, getProducts } from '@/lib/data';
 import { INDIAN_STATES, calculateShippingFee, validateAddress, isTamilNadu } from '@/lib/shipping';
 import { Address } from '@/types';
 import {
@@ -200,8 +200,17 @@ export default function CheckoutPage() {
       setRzpLoaded(true);
       setRzpError(false);
 
-      // 2. Pre-flight client-side stock check
+      // 2. Pre-flight client-side active product & stock check
+      const liveActive = await getProducts();
+      const liveActiveMap = new Map(liveActive.map((p) => [p.id, p]));
+
       for (const item of cart) {
+        const liveP = liveActiveMap.get(item.product.id);
+        if (!liveP || liveP.is_active === false) {
+          setStockError(`"${item.product.name}" is no longer available or active. Please return to your cart and remove it.`);
+          setPayLoading(false);
+          return;
+        }
         if (item.product.stock < item.quantity) {
           const sizeLabel = item.size ? ` (${item.size})` : '';
           setStockError(`"${item.product.name}${sizeLabel}" only has ${item.product.stock} unit(s) in stock. Please update your cart.`);

@@ -46,16 +46,30 @@ export default function CartPage() {
   const [inputCode, setInputCode] = useState(couponCode || '');
   const [isApplying, setIsApplying] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
+  const [unavailableKeys, setUnavailableKeys] = useState<Set<string>>(new Set());
 
   // Dynamic shipping note
   const isFreeShipping = isFreeShippingCoupon;
   const totalAmount = Math.max(0, subtotal - discountAmount);
 
-  // Load "You May Also Like" products (4 items excluding cart items)
+  // Load "You May Also Like" products (4 items strictly active & excluding cart items)
+  // Also validate cart items against live active product status
   useEffect(() => {
     getProducts().then((allProducts) => {
+      const activeProducts = allProducts.filter((p) => p.is_active !== false);
+      const activeIdSet = new Set(activeProducts.map((p) => p.id));
+
+      const unavail = new Set<string>();
+      cart.forEach((item) => {
+        const key = `${item.product.id}__${item.size || ''}`;
+        if (!activeIdSet.has(item.product.id) || item.product.is_active === false) {
+          unavail.add(key);
+        }
+      });
+      setUnavailableKeys(unavail);
+
       const cartIds = new Set(cart.map((item) => item.product.id));
-      const filtered = allProducts.filter((p) => !cartIds.has(p.id)).slice(0, 4);
+      const filtered = activeProducts.filter((p) => !cartIds.has(p.id)).slice(0, 4);
       setRecommendedProducts(filtered);
     });
   }, [cart]);
@@ -68,6 +82,10 @@ export default function CartPage() {
   };
 
   const handleProceedToCheckout = () => {
+    if (unavailableKeys.size > 0) {
+      alert('Please remove unavailable products from your cart before proceeding to checkout.');
+      return;
+    }
     if (!user) {
       router.push('/login?redirect=/checkout');
     } else {
@@ -123,6 +141,31 @@ export default function CartPage() {
         </h1>
       </div>
 
+      {/* Top Banner Warning for Unavailable Items */}
+      {unavailableKeys.size > 0 && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-red-800 shadow-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+            <span>
+              <strong>Attention:</strong> {unavailableKeys.size} item(s) in your cart are no longer available or active. Please remove them before proceeding to checkout.
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              cart.forEach((item) => {
+                const key = `${item.product.id}__${item.size || ''}`;
+                if (unavailableKeys.has(key)) {
+                  removeFromCart(item.product.id, item.size);
+                }
+              });
+            }}
+            className="px-3 py-1.5 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors flex-shrink-0"
+          >
+            Remove Unavailable Items
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
         {/* Left: Cart Line Items */}
         <div className="lg:col-span-8 space-y-6">
@@ -131,9 +174,15 @@ export default function CartPage() {
               const maxStock = product.stock > 0 ? Math.min(5, product.stock) : 0;
               const hasImages = product.images && product.images.length > 0 && product.images[0].trim() !== '';
               const cartKey = `${product.id}__${size || ''}`;
+              const isUnavailable = unavailableKeys.has(cartKey) || product.is_active === false;
 
               return (
-                <div key={cartKey} className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 hover:bg-zinc-50/50 transition-colors">
+                <div
+                  key={cartKey}
+                  className={`p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 transition-colors ${
+                    isUnavailable ? 'bg-red-50/40 border-l-4 border-red-500' : 'hover:bg-zinc-50/50'
+                  }`}
+                >
                   {/* Image & Title */}
                   <div className="flex items-center gap-4 flex-1">
                     <div className="w-20 h-24 bg-zinc-100 rounded-lg overflow-hidden flex-shrink-0 border border-zinc-200 flex items-center justify-center">
@@ -144,10 +193,21 @@ export default function CartPage() {
                       )}
                     </div>
                     <div className="space-y-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
-                        {product.category?.name || 'Spiritual'}
-                      </span>
-                      <Link href={`/product/${product.slug}`} className="block font-semibold text-sm text-zinc-900 hover:text-amber-800 transition-colors">
+                      {isUnavailable ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-red-700 bg-red-100 px-2 py-0.5 rounded border border-red-200">
+                          <AlertCircle className="w-3 h-3" /> No Longer Available
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
+                          {product.category?.name || 'Spiritual'}
+                        </span>
+                      )}
+                      <Link
+                        href={`/product/${product.slug}`}
+                        className={`block font-semibold text-sm transition-colors ${
+                          isUnavailable ? 'text-zinc-500 line-through' : 'text-zinc-900 hover:text-amber-800'
+                        }`}
+                      >
                         {product.name}
                       </Link>
                       {/* Size badge for Frame items */}
@@ -172,15 +232,16 @@ export default function CartPage() {
                     <div className="flex items-center border border-zinc-300 rounded-lg bg-zinc-50">
                       <button
                         onClick={() => updateQuantity(product.id, quantity - 1, size)}
-                        className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-l-lg"
+                        disabled={isUnavailable}
+                        className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-l-lg disabled:opacity-30"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
                       <span className="px-3 text-xs font-bold text-zinc-900">{quantity}</span>
                       <button
                         onClick={() => updateQuantity(product.id, quantity + 1, size)}
-                        disabled={quantity >= maxStock}
-                        className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-r-lg disabled:opacity-40"
+                        disabled={isUnavailable || quantity >= maxStock}
+                        className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-r-lg disabled:opacity-30"
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>
@@ -221,15 +282,15 @@ export default function CartPage() {
         </div>
 
         {/* Right: Cart Summary & Coupon Section */}
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-6">
+        <div className="lg:col-span-4">
+          <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm space-y-6 sticky top-24">
             <h3 className="font-serif font-bold text-lg text-zinc-900 border-b border-zinc-100 pb-4">
               Order Summary
             </h3>
 
             {/* Coupon Code Input */}
-            <div className="space-y-3">
-              <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
+            <form onSubmit={handleApplyCouponSubmit} className="space-y-3">
+              <label htmlFor="coupon" className="text-xs font-bold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
                 <Tag className="w-3.5 h-3.5 text-amber-800" />
                 <span>Apply Coupon Code</span>
               </label>
@@ -253,24 +314,23 @@ export default function CartPage() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleApplyCouponSubmit} className="space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Enter SRIYAM10, FLAT50..."
-                      value={inputCode}
-                      onChange={(e) => setInputCode(e.target.value.toUpperCase())}
-                      className="flex-1 border border-zinc-300 rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase focus:ring-2 focus:ring-amber-700 focus:outline-none"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isApplying}
-                      className="px-4 py-2 bg-zinc-900 text-white font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-amber-800 transition-colors disabled:opacity-50"
-                    >
-                      {isApplying ? 'Applying...' : 'Apply'}
-                    </button>
-                  </div>
-                </form>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    id="coupon"
+                    placeholder="Enter SRIYAM10, FLAT50..."
+                    value={inputCode}
+                    onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+                    className="flex-1 border border-zinc-300 rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase focus:ring-2 focus:ring-amber-700 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isApplying}
+                    className="px-4 py-2 bg-zinc-900 text-white font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-amber-800 transition-colors disabled:opacity-50"
+                  >
+                    {isApplying ? 'Applying...' : 'Apply'}
+                  </button>
+                </div>
               )}
 
               {/* Coupon Feedback Message */}
@@ -290,7 +350,7 @@ export default function CartPage() {
                   <span>{couponMessage.text}</span>
                 </div>
               )}
-            </div>
+            </form>
 
             {/* Price Calculations */}
             <div className="space-y-3 pt-4 border-t border-zinc-100 text-xs">
@@ -330,9 +390,14 @@ export default function CartPage() {
             {/* Checkout Action Button */}
             <button
               onClick={handleProceedToCheckout}
-              className="w-full py-4 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 transition-colors shadow-lg flex items-center justify-center gap-2 group"
+              disabled={unavailableKeys.size > 0}
+              className={`w-full py-4 font-bold text-xs uppercase tracking-widest rounded-xl transition-colors shadow-lg flex items-center justify-center gap-2 group ${
+                unavailableKeys.size > 0
+                  ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed shadow-none'
+                  : 'bg-zinc-900 text-white hover:bg-amber-800'
+              }`}
             >
-              <span>Proceed to Checkout</span>
+              <span>{unavailableKeys.size > 0 ? 'Remove Unavailable Items' : 'Proceed to Checkout'}</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
 

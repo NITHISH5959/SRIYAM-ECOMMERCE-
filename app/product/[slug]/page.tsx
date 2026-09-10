@@ -57,12 +57,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
     getProducts(),
   ]);
 
-  if (!product) {
+  if (!product || product.is_active === false) {
     notFound();
   }
 
   const relatedProducts = allProducts
-    .filter((p) => p.id !== product.id && p.category_id === product.category_id)
+    .filter((p) => p.is_active !== false && p.id !== product.id && p.category_id === product.category_id)
     .slice(0, 4);
 
   return <ProductDetailClient product={product} relatedProducts={relatedProducts} />;
