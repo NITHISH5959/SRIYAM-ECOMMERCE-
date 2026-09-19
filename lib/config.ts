@@ -9,7 +9,6 @@ export const STORE_CONFIG = {
     compareAtPrice: 649,
     currency: "₹",
   },
-  freeShippingThreshold: 999,
   defaultShippingFee: 50,
   contact: {
     email: "srisridharguru@gmail.com",

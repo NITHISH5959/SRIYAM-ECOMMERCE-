@@ -41,7 +41,7 @@ insert into coupons (code, type, value, min_order_value, usage_limit, active)
 values
   ('SRIYAM10', 'percentage', 10, 500, 100, true),
   ('FLAT50', 'flat', 50, 500, 50, true),
-  ('FREESHIP', 'free_shipping', 0, 999, 200, true)
+  ('FREESHIP', 'free_shipping', 0, 0, 200, true)
 on conflict (code) do nothing;
 
 -- =============================================

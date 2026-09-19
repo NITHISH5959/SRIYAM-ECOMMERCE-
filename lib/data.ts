@@ -27,7 +27,7 @@ export const INITIAL_PRODUCTS: Product[] = [
 export const INITIAL_COUPONS: Coupon[] = [
   { id: 'c1', code: 'SRIYAM10', type: 'percentage', value: 10, min_order_value: 500, usage_limit: 100, used_count: 14, expires_at: '2026-12-31T23:59:59Z', active: true },
   { id: 'c2', code: 'FLAT50', type: 'flat', value: 50, min_order_value: 500, usage_limit: 50, used_count: 8, expires_at: '2026-12-31T23:59:59Z', active: true },
-  { id: 'c3', code: 'FREESHIP', type: 'free_shipping', value: 0, min_order_value: 999, usage_limit: 200, used_count: 32, expires_at: null, active: true },
+  { id: 'c3', code: 'FREESHIP', type: 'free_shipping', value: 0, min_order_value: 0, usage_limit: 200, used_count: 32, expires_at: null, active: true },
 ];
 
 // ── In-memory demo variants for all 9 Frame products ──────────────────────────

@@ -60,9 +60,7 @@ export default function Navbar() {
 
       {/* Top Banner */}
       <div className="bg-zinc-900 text-zinc-300 text-[11px] font-medium py-1.5 px-4 text-center tracking-wide border-b border-zinc-800 flex justify-center items-center gap-4">
-        <span>✨ Free Shipping on orders over ₹999</span>
-        <span className="hidden sm:inline text-zinc-600">|</span>
-        <span className="hidden sm:inline">Authentic Sacred Art &amp; Fine Heritage Printing</span>
+        <span>✨ Authentic Sacred Art &amp; Fine Heritage Printing</span>
       </div>
 
       {/* Main Navbar */}

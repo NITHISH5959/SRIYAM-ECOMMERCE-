@@ -317,7 +317,7 @@ export default function ProductDetailClient({
             <div className="grid grid-cols-2 gap-4 bg-zinc-50 p-4 rounded-xl border border-zinc-200/80">
               <div className="flex items-center gap-2">
                 <Truck className="w-4 h-4 text-amber-700 flex-shrink-0" />
-                <span>Free shipping &gt; ₹999</span>
+                <span>Express All-India Shipping</span>
               </div>
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-amber-700 flex-shrink-0" />
