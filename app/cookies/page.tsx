@@ -97,24 +97,6 @@ export default function CookiesPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-1">
               <a
-                href="https://ctrlshift.in"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-4 bg-zinc-900 text-white rounded-xl border border-zinc-800 hover:border-amber-500/50 transition-all group flex flex-col justify-between space-y-3"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-serif font-bold text-sm text-amber-400">CtrlShift</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-zinc-400 group-hover:text-amber-400 transition-colors" />
-                  </div>
-                  <span className="text-[10px] font-mono text-zinc-400 block mt-0.5">ctrlshift.in</span>
-                </div>
-                <p className="text-[11px] text-zinc-300 leading-relaxed">
-                  Digital Engineering, E-Commerce Solutions & Web Technology Studio.
-                </p>
-              </a>
-
-              <a
                 href="https://templeint.in"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -129,6 +111,24 @@ export default function CookiesPage() {
                 </div>
                 <p className="text-[11px] text-zinc-300 leading-relaxed">
                   International Temple Heritage, Pilgrimage Directories & Cultural Archive.
+                </p>
+              </a>
+
+              <a
+                href="https://ctrlshift.in"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-4 bg-zinc-900 text-white rounded-xl border border-zinc-800 hover:border-amber-500/50 transition-all group flex flex-col justify-between space-y-3"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-serif font-bold text-sm text-amber-400">CtrlShift</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-zinc-400 group-hover:text-amber-400 transition-colors" />
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-400 block mt-0.5">ctrlshift.in</span>
+                </div>
+                <p className="text-[11px] text-zinc-300 leading-relaxed">
+                  Digital Engineering, E-Commerce Solutions & Web Technology Studio.
                 </p>
               </a>
             </div>

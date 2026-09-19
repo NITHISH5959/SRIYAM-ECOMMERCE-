@@ -113,21 +113,6 @@ export default function Footer() {
 
             <div className="space-y-2.5 pt-1">
               <a
-                href="https://ctrlshift.in"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-center justify-between p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 hover:border-amber-500/40 hover:bg-zinc-900 transition-all shadow-sm"
-              >
-                <div className="space-y-0.5">
-                  <span className="font-serif font-bold text-xs text-zinc-200 group-hover:text-amber-400 transition-colors flex items-center gap-1">
-                    ctrlshift.in
-                  </span>
-                  <p className="text-[10px] text-zinc-400">Digital &amp; Tech Engineering</p>
-                </div>
-                <ExternalLink className="w-3.5 h-3.5 text-zinc-500 group-hover:text-amber-400 transition-colors flex-shrink-0" />
-              </a>
-
-              <a
                 href="https://templeint.in"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -138,6 +123,21 @@ export default function Footer() {
                     templeint.in
                   </span>
                   <p className="text-[10px] text-zinc-400">Temple Heritage &amp; Devotion</p>
+                </div>
+                <ExternalLink className="w-3.5 h-3.5 text-zinc-500 group-hover:text-amber-400 transition-colors flex-shrink-0" />
+              </a>
+
+              <a
+                href="https://ctrlshift.in"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex items-center justify-between p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 hover:border-amber-500/40 hover:bg-zinc-900 transition-all shadow-sm"
+              >
+                <div className="space-y-0.5">
+                  <span className="font-serif font-bold text-xs text-zinc-200 group-hover:text-amber-400 transition-colors flex items-center gap-1">
+                    ctrlshift.in
+                  </span>
+                  <p className="text-[10px] text-zinc-400">Digital &amp; Tech Engineering</p>
                 </div>
                 <ExternalLink className="w-3.5 h-3.5 text-zinc-500 group-hover:text-amber-400 transition-colors flex-shrink-0" />
               </a>
