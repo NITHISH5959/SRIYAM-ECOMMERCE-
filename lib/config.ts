@@ -9,7 +9,7 @@ export const STORE_CONFIG = {
     compareAtPrice: 649,
     currency: "₹",
   },
-  defaultShippingFee: 50,
+  defaultShippingFee: 150,
   contact: {
     email: "srisridharguru@gmail.com",
     phone: "+91 88703 08265",

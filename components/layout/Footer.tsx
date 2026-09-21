@@ -41,7 +41,7 @@ export default function Footer() {
             <div className="space-y-2 pt-1 text-[11px] text-zinc-400">
               <div className="flex items-center gap-2">
                 <Truck className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                <span>Flat ₹50 Delivery Across India</span>
+                <span>Express Delivery Across India</span>
               </div>
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />

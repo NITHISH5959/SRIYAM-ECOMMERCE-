@@ -127,8 +127,8 @@ export default async function HomePage() {
                   <p className="text-[11px] text-zinc-500 font-medium">Sacred Accuracy</p>
                 </div>
                 <div>
-                  <p className="text-lg font-bold text-zinc-900">₹50</p>
-                  <p className="text-[11px] text-zinc-500 font-medium">Flat Delivery Fee</p>
+                  <p className="text-lg font-bold text-zinc-900">Pan India</p>
+                  <p className="text-[11px] text-zinc-500 font-medium">Express Shipping</p>
                 </div>
                 <div>
                   <p className="text-lg font-bold text-zinc-900">Archival</p>

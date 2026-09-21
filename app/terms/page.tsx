@@ -103,7 +103,7 @@ export default function TermsPage() {
                 We deliver to all serviceable pincodes across India.
               </p>
               <ul className="list-disc pl-5 space-y-1 text-zinc-600">
-                <li><strong>Flat Shipping Rate:</strong> A flat delivery fee of <strong>₹50</strong> is applied to every order, irrespective of weight, quantity, or delivery state.</li>
+                <li><strong>Standard Shipping Rates:</strong> Delivery fee is <strong>₹150 for Tamil Nadu</strong> and <strong>₹200 for all other states</strong> across India.</li>
                 <li><strong>Dispatch Timeline:</strong> Orders are packaged and dispatched within <strong>2 to 4 business days</strong> following payment verification.</li>
                 <li><strong>Delivery Timeline:</strong> Typical transit times range from <strong>4 to 7 business days</strong> depending on your destination city/state.</li>
                 <li><strong>Protective Packaging:</strong> All frames and archival posters are shipped in reinforced, shock-absorbing protective packaging to safeguard the sacred art.</li>
