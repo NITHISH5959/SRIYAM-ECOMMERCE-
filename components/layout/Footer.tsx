@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { STORE_CONFIG } from '@/lib/config';
-import { MessageCircle, Heart, Truck, ShieldCheck, ExternalLink, Globe, Cookie } from 'lucide-react';
+import { MessageCircle, Truck, ShieldCheck, ExternalLink, Globe, Cookie } from 'lucide-react';
 
 export default function Footer() {
   return (
@@ -209,10 +209,8 @@ export default function Footer() {
             <span>·</span>
             <Link href="/cookies" className="hover:text-zinc-300 transition-colors">Cookies</Link>
           </div>
-          <div className="flex items-center gap-1">
-            <span>Crafted with</span>
-            <Heart className="w-3 h-3 text-amber-600 fill-amber-600" />
-            <span>for Spiritual Heritage</span>
+          <div className="text-amber-500/80 font-medium tracking-wide text-[11px]">
+            நற்றுணையாவது நமச்சிவாயவே
           </div>
         </div>
       </div>

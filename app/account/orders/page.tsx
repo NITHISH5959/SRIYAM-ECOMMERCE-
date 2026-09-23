@@ -10,6 +10,7 @@ import { STORE_CONFIG } from '@/lib/config';
 import {
   Package, ChevronDown, ChevronUp, MapPin, Clock,
   Truck, CheckCircle2, XCircle, MessageCircle, Loader2, RefreshCw,
+  ShoppingBag, ShoppingCart, Sparkles,
 } from 'lucide-react';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -208,11 +209,73 @@ export default function AccountOrdersPage() {
           <Loader2 className="w-8 h-8 text-amber-800 animate-spin" />
         </div>
       ) : orders.length === 0 ? (
-        <div className="text-center py-20 space-y-4">
-          <Package className="w-12 h-12 text-zinc-300 mx-auto" />
-          <p className="text-base font-semibold text-zinc-500">No orders yet</p>
-          <p className="text-xs text-zinc-400">Your order history will appear here once you make a purchase.</p>
-          <Link href="/shop" className="inline-block px-5 py-2.5 bg-amber-800 text-white font-bold text-xs uppercase rounded-lg">Start Shopping</Link>
+        <div className="flex flex-col items-center justify-center py-16 px-4">
+          {/* Animated illustration */}
+          <div className="relative mb-8">
+            {/* Outer glow ring */}
+            <div className="absolute inset-0 rounded-full bg-amber-100 blur-2xl opacity-60 scale-110" />
+            {/* Main circle */}
+            <div className="relative w-36 h-36 rounded-full bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-200 flex items-center justify-center shadow-lg">
+              {/* Floating sparkles */}
+              <Sparkles className="absolute top-3 right-4 w-4 h-4 text-amber-400 animate-pulse" />
+              <Sparkles className="absolute bottom-4 left-3 w-3 h-3 text-amber-300 animate-pulse" style={{ animationDelay: '0.5s' }} />
+              <div className="flex flex-col items-center gap-1">
+                <ShoppingBag className="w-14 h-14 text-amber-300" strokeWidth={1.2} />
+              </div>
+            </div>
+            {/* Small orbiting badge */}
+            <div className="absolute -top-2 -right-2 w-9 h-9 bg-zinc-900 rounded-full flex items-center justify-center shadow-md border-2 border-white">
+              <span className="text-white font-black text-sm">0</span>
+            </div>
+          </div>
+
+          {/* Heading */}
+          <h2 className="text-xl font-serif font-bold text-zinc-900 mb-2">No orders placed yet</h2>
+          <p className="text-xs text-zinc-500 text-center max-w-xs leading-relaxed mb-8">
+            Your divine collection awaits — explore our handcrafted spiritual products and place your first order.
+          </p>
+
+          {/* Journey steps */}
+          <div className="flex items-center gap-3 mb-8 text-[11px] text-zinc-400 font-medium">
+            <div className="flex items-center gap-1.5">
+              <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center">
+                <span className="text-amber-700 font-black text-[9px]">1</span>
+              </div>
+              <span>Browse</span>
+            </div>
+            <div className="w-6 h-px bg-zinc-200" />
+            <div className="flex items-center gap-1.5">
+              <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center">
+                <span className="text-amber-700 font-black text-[9px]">2</span>
+              </div>
+              <span>Add to Cart</span>
+            </div>
+            <div className="w-6 h-px bg-zinc-200" />
+            <div className="flex items-center gap-1.5">
+              <div className="w-5 h-5 rounded-full bg-zinc-100 flex items-center justify-center">
+                <span className="text-zinc-400 font-black text-[9px]">3</span>
+              </div>
+              <span className="text-zinc-300">Order</span>
+            </div>
+          </div>
+
+          {/* CTAs */}
+          <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
+            <Link
+              href="/shop"
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-900 hover:bg-amber-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-colors shadow-md"
+            >
+              <ShoppingBag className="w-4 h-4" />
+              <span>Shop Now</span>
+            </Link>
+            <Link
+              href="/cart"
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs uppercase tracking-widest rounded-xl border border-amber-200 transition-colors"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              <span>Go to Cart</span>
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
