@@ -110,6 +110,12 @@ export default function CheckoutPage() {
   }, [user]);
 
   useEffect(() => {
+    // Immediately wipe the previous user's addresses so they never flash
+    // on screen while the new fetch is in-flight.
+    setAddresses([]);
+    setSelectedAddressId('');
+    setIsAddingNew(false);
+
     if (!user?.id) return;
     getAddresses(user.id).then((addrs) => {
       setAddresses(addrs);
@@ -120,7 +126,7 @@ export default function CheckoutPage() {
         setIsAddingNew(true);
       }
     });
-  }, [user]);
+  }, [user?.id]);
 
   const handleAddrChange = (field: string, value: any) => {
     setNewAddr((prev) => ({ ...prev, [field]: value }));

@@ -560,8 +560,12 @@ export async function getAddresses(userId: string): Promise<Address[]> {
     if (!isSupabaseConfigured()) return memoryAddresses.filter(a => a.user_id === userId);
     const supabase = createClient();
     const { data, error } = await supabase.from('addresses').select('id, user_id, name, phone, line1, line2, city, state, pincode, is_default').eq('user_id', userId);
-    if (!error && data && data.length > 0) return data as Address[];
+    // Return the Supabase result (even if empty) as long as there is no error.
+    // An empty result means the user has no saved addresses — do NOT fall back
+    // to in-memory data which belongs to a different (demo) user.
+    if (!error && data !== null) return data as Address[];
   } catch {}
+  // Only fall back to in-memory when Supabase itself threw an exception.
   return memoryAddresses.filter(a => a.user_id === userId);
 }
 

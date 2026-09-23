@@ -193,8 +193,10 @@ export default function AccountAddressesPage() {
   useEffect(() => {
     if (!cartLoaded) return;
     if (!user) { router.push('/login?redirect=/account/addresses'); return; }
+    setAddresses([]);
+    setLoading(true);
     getAddresses(user.id).then(data => { setAddresses(data); setLoading(false); });
-  }, [user, cartLoaded, router]);
+  }, [user?.id, cartLoaded, router]);
 
   const showMsg = (type: 'success' | 'error', text: string) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 3000); };
 
