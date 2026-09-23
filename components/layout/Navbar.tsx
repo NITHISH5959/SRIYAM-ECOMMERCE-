@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { ShoppingBag, Menu, X, MessageCircle, ShieldCheck, User, LogOut, Package, MapPin, ChevronDown, CheckCircle2 } from 'lucide-react';
 
 // ── Slide-in toast that auto-dismisses ────────────────────────────────────────
@@ -34,6 +35,21 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
+
+  const handleSignOut = async () => {
+    // Invalidate the Supabase session so refresh doesn't restore the user
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.error('[signOut error]', e);
+      }
+    }
+    setUser(null);
+    setAccountOpen(false);
+    setMobileMenuOpen(false);
+  };
 
   // Close account dropdown on outside click
   useEffect(() => {
@@ -137,7 +153,7 @@ export default function Navbar() {
                       <MapPin className="w-3.5 h-3.5" />Saved Addresses
                     </Link>
                     <div className="border-t border-zinc-100 mt-1 pt-1">
-                      <button onClick={() => { setUser(null); setAccountOpen(false); }}
+                      <button onClick={handleSignOut}
                         className="flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors">
                         <LogOut className="w-3.5 h-3.5" />Sign Out
                       </button>
@@ -200,7 +216,7 @@ export default function Navbar() {
                 <>
                   <div className="px-3 py-2 bg-zinc-50 rounded-lg text-xs font-bold text-zinc-800 flex justify-between items-center">
                     <span>Hi, {user.name}</span>
-                    <button onClick={() => { setUser(null); setMobileMenuOpen(false); }} className="text-red-600 font-bold flex items-center gap-1">
+                    <button onClick={handleSignOut} className="text-red-600 font-bold flex items-center gap-1">
                       <LogOut className="w-3.5 h-3.5" />Sign Out
                     </button>
                   </div>
