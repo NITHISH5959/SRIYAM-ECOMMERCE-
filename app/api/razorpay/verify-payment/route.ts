@@ -13,6 +13,7 @@ import {
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { verifyPaymentLimiter, getClientIp } from '@/lib/rate-limit';
 import { calculateShippingFee } from '@/lib/shipping';
+import { sendOrderConfirmationEmail } from '@/lib/email';
 
 /**
  * POST /api/razorpay/verify-payment
@@ -314,6 +315,13 @@ export async function POST(request: Request) {
     if (orderData.coupon_code) {
       await incrementCouponUsageCount(orderData.coupon_code);
     }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 9 — SEND ORDER CONFIRMATION EMAIL (Non-blocking)
+    // ════════════════════════════════════════════════════════════════════════
+    sendOrderConfirmationEmail(newOrder).catch((err) =>
+      console.warn('[verify-payment] Failed to send order confirmation email:', err)
+    );
 
     return NextResponse.json({
       success: true,

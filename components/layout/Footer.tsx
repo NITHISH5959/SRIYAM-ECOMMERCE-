@@ -69,6 +69,12 @@ export default function Footer() {
             </h4>
             <ul className="space-y-2.5 text-xs">
               <li>
+                <Link href="/track-order" className="text-amber-400 hover:text-amber-300 transition-colors font-medium flex items-center gap-1.5">
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>Track Your Order</span>
+                </Link>
+              </li>
+              <li>
                 <Link href="/shop" className="hover:text-amber-400 transition-colors">
                   All Products
                 </Link>

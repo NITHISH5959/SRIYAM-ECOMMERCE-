@@ -165,7 +165,7 @@ export default function CartDrawer() {
                   Clear Cart
                 </button>
                 <Link
-                  href="/shop"
+                  href="/checkout"
                   onClick={() => setIsCartOpen(false)}
                   className="w-full py-2.5 bg-zinc-900 text-white text-xs font-semibold rounded-md hover:bg-zinc-800 transition-colors uppercase tracking-wider flex items-center justify-center gap-1.5"
                 >

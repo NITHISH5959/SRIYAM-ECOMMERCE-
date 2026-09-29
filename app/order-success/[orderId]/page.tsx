@@ -150,25 +150,26 @@ export default async function OrderSuccessPage({ params }: OrderSuccessProps) {
       )}
 
       {/* Action Buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {/* WhatsApp CTA — primary */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Track Order Online CTA */}
+        <Link
+          href={`/track-order?orderId=${encodeURIComponent(displayOrderId)}&contact=${encodeURIComponent(order?.shipping_address?.phone || (order?.shipping_address as any)?.email || '')}`}
+          className="px-6 py-4 bg-zinc-900 hover:bg-amber-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-colors"
+        >
+          <Package className="w-4 h-4" />
+          <span>Track Order Online</span>
+        </Link>
+
+        {/* WhatsApp CTA */}
         <a
           href={whatsappLink}
           target="_blank"
           rel="noopener noreferrer"
-          className="sm:col-span-2 px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-colors"
+          className="px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-colors"
         >
           <MessageCircle className="w-4 h-4 fill-white stroke-none" />
-          <span>Continue on WhatsApp — Track Your Order</span>
+          <span>WhatsApp Courier Tracking</span>
         </a>
-
-        <Link
-          href="/account/orders"
-          className="px-6 py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors border border-zinc-200"
-        >
-          <Clock className="w-4 h-4" />
-          <span>My Orders</span>
-        </Link>
       </div>
 
       <div className="text-center">

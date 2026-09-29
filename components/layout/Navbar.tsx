@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
-import { ShoppingBag, Menu, X, MessageCircle, ShieldCheck, User, LogOut, Package, MapPin, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { ShoppingBag, Menu, X, MessageCircle, ShieldCheck, User, LogOut, Package, MapPin, ChevronDown, CheckCircle2, Truck } from 'lucide-react';
 
 // ── Slide-in toast that auto-dismisses ────────────────────────────────────────
 function Toast({ message }: { message: string }) {
@@ -148,6 +148,10 @@ export default function Navbar() {
                       className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-amber-50 hover:text-amber-800 transition-colors">
                       <Package className="w-3.5 h-3.5" />My Orders
                     </Link>
+                    <Link href="/track-order" onClick={() => setAccountOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-amber-50 hover:text-amber-800 transition-colors">
+                      <Truck className="w-3.5 h-3.5" />Track Order
+                    </Link>
                     <Link href="/account/addresses" onClick={() => setAccountOpen(false)}
                       className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-amber-50 hover:text-amber-800 transition-colors">
                       <MapPin className="w-3.5 h-3.5" />Saved Addresses
@@ -162,11 +166,18 @@ export default function Navbar() {
                 )}
               </div>
             ) : (
-              <Link href="/login"
-                className="hidden lg:flex items-center gap-1 text-xs font-semibold text-zinc-700 hover:text-amber-800 border border-zinc-200 px-3 py-1.5 rounded-md transition-colors">
-                <User className="w-3.5 h-3.5" />
-                <span>Sign In</span>
-              </Link>
+              <div className="hidden lg:flex items-center gap-2">
+                <Link href="/track-order"
+                  className="flex items-center gap-1 text-xs font-semibold text-zinc-600 hover:text-amber-800 px-2 py-1.5 transition-colors">
+                  <Truck className="w-3.5 h-3.5 text-amber-800" />
+                  <span>Track Order</span>
+                </Link>
+                <Link href="/login"
+                  className="flex items-center gap-1 text-xs font-semibold text-zinc-700 hover:text-amber-800 border border-zinc-200 px-3 py-1.5 rounded-md transition-colors">
+                  <User className="w-3.5 h-3.5" />
+                  <span>Sign In</span>
+                </Link>
+              </div>
             )}
 
             {/* Admin Badge — only visible to admin users (UI convenience; real gate is server-side) */}
@@ -210,6 +221,11 @@ export default function Navbar() {
                   {link.name}
                 </Link>
               ))}
+              <Link href="/track-order" onClick={() => setMobileMenuOpen(false)}
+                className="px-3 py-2 text-sm font-medium text-amber-900 bg-amber-50/50 rounded-md transition-colors flex items-center gap-2">
+                <Truck className="w-4 h-4 text-amber-800" />
+                <span>Track Your Order</span>
+              </Link>
             </nav>
             <div className="pt-2 border-t border-zinc-100 flex flex-col gap-2">
               {user ? (

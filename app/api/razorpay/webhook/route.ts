@@ -11,6 +11,7 @@ import {
   validateCouponCode,
   incrementCouponUsageCount,
 } from '@/lib/data';
+import { sendOrderConfirmationEmail } from '@/lib/email';
 
 /**
  * Razorpay Webhook Endpoint — POST /api/razorpay/webhook
@@ -264,7 +265,21 @@ async function createOrderFromNotes(
   const storedShipping = parseFloat(shipping || '0');
   const couponCode = coupon || '';
 
-  await createOrder({
+  const fallbackAddress = {
+    id: notes.address_id || `addr_${Date.now()}`,
+    user_id: user_id || 'guest',
+    name: notes.cust_name || 'Customer',
+    phone: notes.cust_phone || '',
+    email: notes.cust_email || '',
+    line1: notes.cust_line1 || 'Address not specified via webhook fallback',
+    line2: notes.cust_line2 || '',
+    city: notes.cust_city || 'City',
+    state: notes.cust_state || 'Tamil Nadu',
+    pincode: notes.cust_pincode || '000000',
+    is_default: false,
+  };
+
+  const newOrder = await createOrder({
     user_id,
     items: verifiedItems,
     subtotal: storedSubtotal,
@@ -275,18 +290,22 @@ async function createOrderFromNotes(
     status: 'paid',
     razorpay_order_id: razorpayOrderId,
     razorpay_payment_id: razorpayPaymentId,
-    // Address not available via webhook — stored as empty object.
-    // The order will still be visible in admin with all item/payment data.
-    shipping_address: {} as any,
+    shipping_address: fallbackAddress as any,
   });
 
   if (couponCode) {
     await incrementCouponUsageCount(couponCode);
   }
 
+  // Send confirmation email
+  sendOrderConfirmationEmail(newOrder).catch((err) =>
+    console.warn('[Webhook] Failed to send fallback confirmation email:', err)
+  );
+
   console.info('[Webhook] Fallback order created successfully.', {
     razorpayOrderId,
     razorpayPaymentId,
+    orderNumber: newOrder.order_number,
     total: storedTotal,
     itemCount: verifiedItems.length,
   });

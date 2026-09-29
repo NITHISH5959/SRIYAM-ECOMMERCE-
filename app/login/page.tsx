@@ -84,7 +84,7 @@ function LoginContent() {
           Sign In to {STORE_CONFIG.name}
         </h1>
         <p className="text-xs text-zinc-500">
-          Login is required to proceed to secure checkout.
+          Sign in to access your orders and saved details.
         </p>
       </div>
 

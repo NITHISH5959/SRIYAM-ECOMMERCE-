@@ -1,17 +1,31 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Script from 'next/script';
+import Image from 'next/image';
 import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
-import { getAddresses, saveAddress, getProducts } from '@/lib/data';
-import { INDIAN_STATES, calculateShippingFee, validateAddress, isTamilNadu } from '@/lib/shipping';
-import { Address } from '@/types';
+import { getAddresses, getProducts, validateCouponCode } from '@/lib/data';
+import { INDIAN_STATES, calculateShippingFee, isTamilNadu, validateAddress } from '@/lib/shipping';
+import { Address, CartItem } from '@/types';
 import {
-  MapPin, Truck, CreditCard, CheckCircle2, Plus, ArrowRight,
-  Lock, AlertTriangle, Loader2, RefreshCw, X, Check,
+  ArrowLeft,
+  ShoppingBag,
+  CreditCard,
+  Lock,
+  AlertCircle,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Tag,
+  X,
+  Truck,
+  ShieldCheck,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 
 /**
@@ -48,42 +62,88 @@ function loadRazorpaySDK(): Promise<boolean> {
   });
 }
 
+// Payment method logos / badges SVG icons
+function PaymentIcons() {
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {/* Visa */}
+      <span className="inline-flex items-center justify-center px-1.5 py-0.5 bg-white border border-zinc-200 rounded text-[10px] font-black text-blue-800 tracking-tighter">
+        VISA
+      </span>
+      {/* Mastercard */}
+      <span className="inline-flex items-center justify-center px-1.5 py-0.5 bg-white border border-zinc-200 rounded text-[10px] font-bold text-red-600 tracking-tight">
+        <span className="text-red-500 font-black">MC</span>
+      </span>
+      {/* RuPay */}
+      <span className="inline-flex items-center justify-center px-1.5 py-0.5 bg-white border border-zinc-200 rounded text-[10px] font-bold text-cyan-800">
+        RuPay
+      </span>
+      {/* UPI */}
+      <span className="inline-flex items-center justify-center px-1.5 py-0.5 bg-white border border-zinc-200 rounded text-[10px] font-black text-emerald-700">
+        UPI
+      </span>
+      {/* Netbanking */}
+      <span className="inline-flex items-center justify-center px-1.5 py-0.5 bg-white border border-zinc-200 rounded text-[9px] font-medium text-zinc-600">
+        NetBanking
+      </span>
+    </div>
+  );
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
-  const { cart, subtotal, coupon, discountAmount, isFreeShippingCoupon, clearCart, user, cartLoaded } = useCart();
+  const {
+    cart,
+    subtotal,
+    coupon,
+    discountAmount,
+    isFreeShippingCoupon,
+    couponMessage,
+    applyCoupon,
+    removeCoupon,
+    clearCart,
+    user,
+    cartLoaded,
+  } = useCart();
 
-  useEffect(() => {
-    if (cartLoaded && !user) {
-      router.push('/login?redirect=/checkout');
-    }
-  }, [user, cartLoaded, router]);
+  // Form states
+  const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [country, setCountry] = useState('India');
+  const [addressLine1, setAddressLine1] = useState('');
+  const [addressLine2, setAddressLine2] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [pincode, setPincode] = useState('');
+  const [phone, setPhone] = useState('');
 
-  const [addresses, setAddresses] = useState<Address[]>([]);
-  const [selectedAddressId, setSelectedAddressId] = useState('');
-  const [isAddingNew, setIsAddingNew] = useState(false);
-  const [newAddr, setNewAddr] = useState<Partial<Address>>({
-    name: '',
-    phone: '',
-    line1: '',
-    line2: '',
-    city: '',
-    state: 'Tamil Nadu',
-    pincode: '',
-    is_default: true,
-  });
-  const [addrErrors, setAddrErrors] = useState<Record<string, string>>({});
-  const [savingAddr, setSavingAddr] = useState(false);
+  // Checkboxes
+  const [sendDeals, setSendDeals] = useState(true);
+  const [agreeTerms, setAgreeTerms] = useState(false);
 
-  // Razorpay SDK loading state & retry key
+  // Field validation touched states
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // Discount code box in right column
+  const [discountInput, setDiscountInput] = useState('');
+  const [isApplyingDiscount, setIsApplyingDiscount] = useState(false);
+
+  // Mobile order summary accordion state
+  const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
+
+  // Saved addresses for logged-in user
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>('');
+
+  // Payment execution states
+  const [payLoading, setPayLoading] = useState(false);
+  const [payError, setPayError] = useState('');
+  const [stockError, setStockError] = useState('');
   const [rzpLoaded, setRzpLoaded] = useState(false);
   const [rzpError, setRzpError] = useState(false);
   const [scriptRetryKey, setScriptRetryKey] = useState(0);
 
-  const [payLoading, setPayLoading] = useState(false);
-  const [payError, setPayError] = useState('');
-  const [stockError, setStockError] = useState('');
-
-  // Proactively initialize and check Razorpay SDK on mount
+  // Proactively check and load Razorpay SDK on mount
   useEffect(() => {
     loadRazorpaySDK().then((ready) => {
       if (ready) {
@@ -93,112 +153,143 @@ export default function CheckoutPage() {
     });
   }, [scriptRetryKey]);
 
-  // Selected address and active destination state for shipping
-  const selectedAddress = addresses.find((a) => a.id === selectedAddressId);
-  const activeState = isAddingNew ? newAddr.state : selectedAddress?.state;
-
-  // Instant state-based shipping calculation (₹150 for Tamil Nadu, ₹200 for other states, ₹0 for free shipping coupon)
-  const shippingRate = calculateShippingFee(activeState, isFreeShippingCoupon);
-  const effectiveShippingFee = isFreeShippingCoupon ? 0 : shippingRate;
-  const finalTotal = Math.max(0, subtotal - discountAmount) + effectiveShippingFee;
-
-  // Sync recipient name once user has hydrated
+  // Sync user profile & saved addresses if logged in
   useEffect(() => {
-    if (user?.name) {
-      setNewAddr((prev) => ({ ...prev, name: prev.name || user.name }));
+    if (user) {
+      if (user.email && !email) setEmail(user.email);
+      if (user.name && !fullName) setFullName(user.name);
+
+      getAddresses(user.id).then((addrs) => {
+        if (addrs && addrs.length > 0) {
+          setSavedAddresses(addrs);
+          const defaultAddr = addrs.find((a) => a.is_default) || addrs[0];
+          setSelectedAddressId(defaultAddr.id);
+          // Prefill fields from default saved address
+          setFullName((prev) => prev || defaultAddr.name || '');
+          setPhone((prev) => prev || defaultAddr.phone || '');
+          setAddressLine1((prev) => prev || defaultAddr.line1 || '');
+          setAddressLine2((prev) => prev || defaultAddr.line2 || '');
+          setCity((prev) => prev || defaultAddr.city || '');
+          setState((prev) => prev || defaultAddr.state || '');
+          setPincode((prev) => prev || defaultAddr.pincode || '');
+        }
+      });
     }
   }, [user]);
 
-  useEffect(() => {
-    // Immediately wipe the previous user's addresses so they never flash
-    // on screen while the new fetch is in-flight.
-    setAddresses([]);
-    setSelectedAddressId('');
-    setIsAddingNew(false);
-
-    if (!user?.id) return;
-    getAddresses(user.id).then((addrs) => {
-      setAddresses(addrs);
-      if (addrs.length > 0) {
-        const def = addrs.find((a) => a.is_default) || addrs[0];
-        setSelectedAddressId(def.id);
-      } else {
-        setIsAddingNew(true);
-      }
-    });
-  }, [user?.id]);
-
-  const handleAddrChange = (field: string, value: any) => {
-    setNewAddr((prev) => ({ ...prev, [field]: value }));
-    if (addrErrors[field]) {
-      setAddrErrors((prev) => {
-        const copy = { ...prev };
-        delete copy[field];
-        return copy;
-      });
+  // When user selects a different saved address from dropdown
+  const handleSelectSavedAddress = (addressId: string) => {
+    setSelectedAddressId(addressId);
+    if (!addressId) return;
+    const addr = savedAddresses.find((a) => a.id === addressId);
+    if (addr) {
+      setFullName(addr.name || '');
+      setPhone(addr.phone || '');
+      setAddressLine1(addr.line1 || '');
+      setAddressLine2(addr.line2 || '');
+      setCity(addr.city || '');
+      setState(addr.state || '');
+      setPincode(addr.pincode || '');
+      setTouched({});
     }
   };
 
-  const handleSaveAddr = async (e: React.FormEvent) => {
+  // Validation logic
+  const emailValid = useMemo(() => {
+    const clean = email.trim();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean);
+  }, [email]);
+
+  const phoneValid = useMemo(() => {
+    const digits = phone.replace(/\D/g, '');
+    return digits.length === 10;
+  }, [phone]);
+
+  const nameValid = useMemo(() => {
+    return fullName.trim().length >= 2;
+  }, [fullName]);
+
+  const addressValid = useMemo(() => {
+    return addressLine1.trim().length >= 4;
+  }, [addressLine1]);
+
+  const cityValid = useMemo(() => {
+    return city.trim().length >= 2;
+  }, [city]);
+
+  const stateValid = useMemo(() => {
+    return state.trim().length > 0 && INDIAN_STATES.includes(state as any);
+  }, [state]);
+
+  const pincodeValid = useMemo(() => {
+    const digits = pincode.replace(/\D/g, '');
+    return digits.length === 6;
+  }, [pincode]);
+
+  const isFormValid =
+    emailValid &&
+    nameValid &&
+    addressValid &&
+    cityValid &&
+    stateValid &&
+    pincodeValid &&
+    phoneValid &&
+    agreeTerms;
+
+  // State-based shipping calculations
+  const hasStateSelected = Boolean(state && stateValid);
+  const shippingRate = hasStateSelected ? calculateShippingFee(state, isFreeShippingCoupon) : 0;
+  const effectiveShippingFee = isFreeShippingCoupon ? 0 : shippingRate;
+  const finalTotal = Math.max(0, subtotal - discountAmount) + (hasStateSelected ? effectiveShippingFee : 0);
+
+  // Discount code submit handler
+  const handleApplyDiscountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
-
-    const validation = validateAddress(newAddr);
-    if (!validation.valid) {
-      setAddrErrors(validation.errors);
-      return;
-    }
-
-    setAddrErrors({});
-    setSavingAddr(true);
-    try {
-      const saved = await saveAddress({ ...newAddr, user_id: user.id });
-      setAddresses((prev) => [...prev, saved]);
-      setSelectedAddressId(saved.id);
-      setIsAddingNew(false);
-      setNewAddr({
-        name: user.name || '',
-        phone: '',
-        line1: '',
-        line2: '',
-        city: '',
-        state: 'Tamil Nadu',
-        pincode: '',
-        is_default: false,
-      });
-    } catch (err: any) {
-      setPayError(err.message || 'Failed to save delivery address.');
-    } finally {
-      setSavingAddr(false);
-    }
+    if (!discountInput.trim()) return;
+    setIsApplyingDiscount(true);
+    await applyCoupon(discountInput.trim());
+    setIsApplyingDiscount(false);
   };
 
-  const handlePay = async () => {
+  // Payment checkout initiator
+  const handleProceedPayment = async () => {
     setPayError('');
     setStockError('');
-    if (!selectedAddress) {
-      setPayError('Please select or add a delivery address.');
-      return;
-    }
 
-    // Validate delivery address fields
-    const addrVal = validateAddress(selectedAddress);
-    if (!addrVal.valid) {
-      const firstErr = Object.values(addrVal.errors)[0];
-      setPayError(`Delivery address error: ${firstErr}`);
+    // Mark all fields touched to trigger validation alerts if incomplete
+    setTouched({
+      email: true,
+      fullName: true,
+      addressLine1: true,
+      city: true,
+      state: true,
+      pincode: true,
+      phone: true,
+      agreeTerms: true,
+    });
+
+    if (!isFormValid) {
+      if (!emailValid) setPayError('Please provide a valid email address.');
+      else if (!nameValid) setPayError('Please provide your full name.');
+      else if (!addressValid) setPayError('Please provide your delivery street address.');
+      else if (!cityValid) setPayError('Please provide your city.');
+      else if (!stateValid) setPayError('Please select a valid destination state.');
+      else if (!pincodeValid) setPayError('Please provide a valid 6-digit postal pincode.');
+      else if (!phoneValid) setPayError('Please provide a valid 10-digit mobile number.');
+      else if (!agreeTerms) setPayError('Please accept the Terms & Conditions and Privacy Policy.');
       return;
     }
 
     setPayLoading(true);
 
     try {
-      // 1. Ensure Razorpay SDK is fully ready
+      // 1. Ensure Razorpay SDK is loaded
       let isReady = typeof window !== 'undefined' && !!(window as any).Razorpay;
       if (!isReady) {
         isReady = await loadRazorpaySDK();
       }
       if (!isReady) {
-        setPayError('Payment gateway is loading. Please check your internet connection and click Try Again.');
+        setPayError('Payment gateway could not be loaded. Please check your internet connection and retry.');
         setRzpError(true);
         setPayLoading(false);
         return;
@@ -206,26 +297,40 @@ export default function CheckoutPage() {
       setRzpLoaded(true);
       setRzpError(false);
 
-      // 2. Pre-flight client-side active product & stock check
-      const liveActive = await getProducts();
-      const liveActiveMap = new Map(liveActive.map((p) => [p.id, p]));
+      // 2. Client-side stock & active status check
+      const liveProducts = await getProducts();
+      const liveProductMap = new Map(liveProducts.map((p) => [p.id, p]));
 
       for (const item of cart) {
-        const liveP = liveActiveMap.get(item.product.id);
+        const liveP = liveProductMap.get(item.product.id);
         if (!liveP || liveP.is_active === false) {
-          setStockError(`"${item.product.name}" is no longer available or active. Please return to your cart and remove it.`);
+          setStockError(`"${item.product.name}" is currently unavailable. Please return to cart and remove it.`);
           setPayLoading(false);
           return;
         }
         if (item.product.stock < item.quantity) {
           const sizeLabel = item.size ? ` (${item.size})` : '';
-          setStockError(`"${item.product.name}${sizeLabel}" only has ${item.product.stock} unit(s) in stock. Please update your cart.`);
+          setStockError(`"${item.product.name}${sizeLabel}" only has ${item.product.stock} unit(s) available.`);
           setPayLoading(false);
           return;
         }
       }
 
-      // 3. Build cart item payload
+      // 3. Format shipping address and items payload
+      const cleanPhone = phone.replace(/\D/g, '');
+      const shippingAddress: Address = {
+        id: selectedAddressId || `addr_${Date.now()}`,
+        user_id: user?.id || 'guest',
+        name: fullName.trim(),
+        phone: cleanPhone,
+        line1: addressLine1.trim(),
+        line2: addressLine2.trim() || undefined,
+        city: city.trim(),
+        state: state.trim(),
+        pincode: pincode.replace(/\D/g, ''),
+        is_default: false,
+      };
+
       const cartItems = cart.map((i) => ({
         product_id: i.product.id,
         name: i.product.name,
@@ -235,7 +340,7 @@ export default function CheckoutPage() {
         size: i.size,
       }));
 
-      // 4. Create Razorpay order server-side
+      // 4. Call server endpoint to create authoritative Razorpay order
       const orderRes = await fetch('/api/razorpay/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -244,21 +349,21 @@ export default function CheckoutPage() {
           coupon_code: coupon?.code || '',
           shipping_fee: effectiveShippingFee,
           user_id: user?.id || '',
-          shipping_address: selectedAddress,
+          shipping_address: shippingAddress,
         }),
       });
 
       const orderData = await orderRes.json().catch(() => null);
 
       if (!orderData?.success) {
-        setPayError(orderData?.message || 'Failed to initialize order payment. Please try again.');
+        setPayError(orderData?.message || 'Failed to initialize payment. Please try again.');
         setPayLoading(false);
         return;
       }
 
       const serverTotal = orderData.calculatedTotal ?? finalTotal;
 
-      // 5. Verification callback
+      // 5. Verification callback after user completes Razorpay modal
       const verifyPayment = async (rpOrderId: string, rpPaymentId: string, rpSig: string) => {
         try {
           setPayLoading(true);
@@ -277,7 +382,7 @@ export default function CheckoutPage() {
                 coupon_code: coupon?.code || '',
                 shipping_fee: effectiveShippingFee,
                 total: serverTotal,
-                shipping_address: selectedAddress,
+                shipping_address: shippingAddress,
               },
             }),
           });
@@ -294,26 +399,17 @@ export default function CheckoutPage() {
             setPayLoading(false);
           }
         } catch (vErr: any) {
-          console.error('[verify-payment Client Error]', vErr);
-          setPayError('Payment verification could not be completed. Please check your connection or contact support.');
+          console.error('[verify-payment Error]', vErr);
+          setPayError('Payment verification failed. Please check your connection or contact customer support.');
           setPayLoading(false);
         }
       };
 
-      // 6. Build clean, sanitized options for Razorpay Checkout
+      // 6. Prefill and open Razorpay modal
       const prefillData: Record<string, string> = {};
-      const customerName = (selectedAddress.name || user?.name || '').trim();
-      if (customerName) {
-        prefillData.name = customerName;
-      }
-      const customerEmail = (user?.email || '').trim();
-      if (customerEmail && customerEmail.includes('@')) {
-        prefillData.email = customerEmail;
-      }
-      const digitsOnlyPhone = (selectedAddress.phone || '').replace(/\D/g, '');
-      if (digitsOnlyPhone.length >= 10) {
-        prefillData.contact = digitsOnlyPhone.slice(-10);
-      }
+      if (fullName.trim()) prefillData.name = fullName.trim();
+      if (email.trim() && email.includes('@')) prefillData.email = email.trim();
+      if (cleanPhone.length >= 10) prefillData.contact = cleanPhone.slice(-10);
 
       const options: Record<string, any> = {
         key: orderData.key,
@@ -322,7 +418,7 @@ export default function CheckoutPage() {
         name: STORE_CONFIG.name,
         description: 'Order Payment — Sriyam Store',
         order_id: orderData.id,
-        theme: { color: '#92400e' },
+        theme: { color: '#18181b' }, // Zinc 900
         modal: {
           ondismiss: function () {
             setPayLoading(false);
@@ -353,37 +449,54 @@ export default function CheckoutPage() {
         console.warn('[Razorpay Payment Failed Callback]', resp?.error);
         const reason = resp?.error?.description || resp?.error?.reason;
         const msg = reason
-          ? `Payment didn't go through: ${reason}. Please try again.`
-          : "Payment didn't go through. Please try again.";
+          ? `Payment failed: ${reason}. Please try again.`
+          : "Payment failed. Please try again.";
         setPayError(msg);
         setPayLoading(false);
       });
 
       rzp.open();
     } catch (err: any) {
-      console.error('[handlePay error]', err);
+      console.error('[handleProceedPayment Error]', err);
       setPayError(err.message || 'Something went wrong initializing payment. Please try again.');
       setPayLoading(false);
     }
   };
 
-  if (cartLoaded && cart.length === 0) {
+  // Loading state while cart loads
+  if (!cartLoaded) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4">
-        <h1 className="text-2xl font-serif font-bold text-zinc-900">Your Cart is Empty</h1>
-        <p className="text-xs text-zinc-500">Add products to your cart before proceeding to checkout.</p>
-        <Link href="/shop" className="inline-block px-6 py-3 bg-amber-800 text-white font-bold text-xs uppercase rounded-xl">
-          Return to Shop
+      <div className="max-w-6xl mx-auto px-4 py-20 flex flex-col items-center justify-center min-h-[50vh] gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-800" />
+        <p className="text-xs text-zinc-500 font-medium">Loading checkout...</p>
+      </div>
+    );
+  }
+
+  // Empty cart fallback
+  if (cart.length === 0) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-6">
+        <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400 mx-auto">
+          <ShoppingBag className="w-8 h-8 stroke-[1.5]" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-serif font-bold text-zinc-900">Your Cart is Empty</h1>
+          <p className="text-xs text-zinc-500">Add products to your cart before proceeding to checkout.</p>
+        </div>
+        <Link
+          href="/shop"
+          className="inline-flex items-center gap-2 px-8 py-3.5 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 transition-colors shadow-md"
+        >
+          <span>Browse Store</span>
         </Link>
       </div>
     );
   }
 
-  const isPayDisabled = payLoading || !selectedAddress;
-
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-8">
-      {/* Razorpay Checkout Official SDK script */}
+    <div className="min-h-screen bg-white">
+      {/* Razorpay Checkout Official SDK Script */}
       <Script
         id="razorpay-checkout-sdk"
         key={`rzp-sdk-${scriptRetryKey}`}
@@ -398,387 +511,700 @@ export default function CheckoutPage() {
         }}
       />
 
-      <div>
-        <p className="text-xs text-zinc-500 mb-1">Checkout</p>
-        <h1 className="text-3xl font-serif font-bold text-zinc-900">Complete Your Order</h1>
-      </div>
-
-      {payError && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600" />
-            <span>{payError}</span>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {rzpError ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setRzpError(false);
-                  setPayError('');
-                  setScriptRetryKey((k) => k + 1);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-900 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Retry Gateway</span>
-              </button>
+      {/* Mobile Collapsible Order Summary Banner */}
+      <div className="lg:hidden border-b border-zinc-200 bg-zinc-50/80 sticky top-20 z-30">
+        <button
+          type="button"
+          onClick={() => setMobileSummaryOpen((o) => !o)}
+          className="w-full px-4 py-3.5 flex items-center justify-between text-xs font-medium text-zinc-800"
+        >
+          <div className="flex items-center gap-2 text-zinc-900 font-semibold">
+            <ShoppingBag className="w-4 h-4 text-amber-800" />
+            <span>{mobileSummaryOpen ? 'Hide order summary' : 'Show order summary'}</span>
+            {mobileSummaryOpen ? (
+              <ChevronUp className="w-4 h-4 text-zinc-500" />
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setPayError('');
-                  handlePay();
-                }}
-                disabled={isPayDisabled}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-800 text-white text-xs font-bold rounded-lg hover:bg-amber-900 disabled:opacity-50 transition-colors uppercase tracking-wider"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Try Again</span>
-              </button>
+              <ChevronDown className="w-4 h-4 text-zinc-500" />
             )}
           </div>
-        </div>
-      )}
+          <span className="text-sm font-bold text-zinc-900">
+            {STORE_CONFIG.defaultPricing.currency}
+            {finalTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        </button>
 
-      {stockError && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-900 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0" />
-            <span>{stockError}</span>
-          </div>
-          <Link href="/cart" className="font-bold underline text-amber-900 ml-2 whitespace-nowrap">
-            Edit Cart
-          </Link>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left: Address + Shipping */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* Address Selection */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-4">
-            <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
-              <h3 className="font-serif font-bold text-lg text-zinc-900 flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-amber-800" />
-                1. Delivery Address
-              </h3>
-              {!isAddingNew && (
-                <button
-                  type="button"
-                  onClick={() => setIsAddingNew(true)}
-                  className="text-xs font-bold text-amber-800 hover:underline flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />Add New
-                </button>
-              )}
-            </div>
-
-            {/* Address List */}
-            {!isAddingNew && addresses.map((addr) => {
-              const isSelected = selectedAddressId === addr.id;
-              const isTN = isTamilNadu(addr.state);
-              return (
-                <label
-                  key={addr.id}
-                  className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
-                    isSelected
-                      ? 'border-amber-700 bg-amber-50/40 ring-1 ring-amber-700'
-                      : 'border-zinc-200 hover:border-zinc-300'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="address"
-                    checked={isSelected}
-                    onChange={() => setSelectedAddressId(addr.id)}
-                    className="mt-0.5 text-amber-800 focus:ring-amber-700"
-                  />
-                  <div className="text-xs space-y-0.5 flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="font-bold text-zinc-900">
-                        {addr.name} <span className="font-normal text-zinc-500">({addr.phone})</span>
-                      </p>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        isTN ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
-                      }`}>
-                        {isTN ? 'Tamil Nadu (₹150 ship)' : `${addr.state || 'Other State'} (₹200 ship)`}
+        {mobileSummaryOpen && (
+          <div className="px-4 pb-6 pt-2 border-t border-zinc-200 bg-zinc-50 space-y-4 animate-fadeIn">
+            {/* Items */}
+            <div className="space-y-3 divide-y divide-zinc-200/70 max-h-64 overflow-y-auto pr-1">
+              {cart.map(({ product, quantity, size }) => (
+                <div key={`${product.id}__${size || ''}`} className="pt-3 first:pt-0 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-12 h-14 bg-zinc-100 rounded-lg overflow-hidden border border-zinc-200 flex-shrink-0 flex items-center justify-center">
+                      {product.images?.[0] ? (
+                        <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-[10px] text-zinc-400 font-semibold text-center px-1">
+                          {product.name.slice(0, 4)}
+                        </span>
+                      )}
+                      <span className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-700 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow">
+                        {quantity}
                       </span>
                     </div>
-                    <p className="text-zinc-600">
-                      {addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.state} – <span className="font-mono font-bold text-amber-900">{addr.pincode}</span>
-                    </p>
-                  </div>
-                </label>
-              );
-            })}
-
-            {/* Add New Address Form */}
-            {isAddingNew && (
-              <form onSubmit={handleSaveAddr} noValidate className="space-y-3 pt-2 bg-amber-50/30 p-4 rounded-xl border border-amber-200/80">
-                <p className="text-xs font-bold text-zinc-900">Enter Delivery Address</p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Full Name */}
-                  <div className="space-y-1">
-                    <input
-                      type="text"
-                      placeholder="Full Name *"
-                      value={newAddr.name || ''}
-                      onChange={(e) => handleAddrChange('name', e.target.value)}
-                      className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none bg-white ${
-                        addrErrors.name ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
-                      }`}
-                    />
-                    {addrErrors.name && <p className="text-[11px] text-red-600 font-medium">{addrErrors.name}</p>}
-                  </div>
-
-                  {/* Phone */}
-                  <div className="space-y-1">
-                    <input
-                      type="tel"
-                      maxLength={10}
-                      placeholder="Phone Number (10 digits) *"
-                      value={newAddr.phone || ''}
-                      onChange={(e) => handleAddrChange('phone', e.target.value.replace(/\D/g, ''))}
-                      className={`w-full border rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:outline-none bg-white ${
-                        addrErrors.phone ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
-                      }`}
-                    />
-                    {addrErrors.phone && <p className="text-[11px] text-red-600 font-medium">{addrErrors.phone}</p>}
-                  </div>
-                </div>
-
-                {/* Address Line 1 */}
-                <div className="space-y-1">
-                  <input
-                    type="text"
-                    placeholder="Address Line 1 (House No., Building, Street) *"
-                    value={newAddr.line1 || ''}
-                    onChange={(e) => handleAddrChange('line1', e.target.value)}
-                    className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none bg-white ${
-                      addrErrors.line1 ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
-                    }`}
-                  />
-                  {addrErrors.line1 && <p className="text-[11px] text-red-600 font-medium">{addrErrors.line1}</p>}
-                </div>
-
-                {/* Address Line 2 */}
-                <div className="space-y-1">
-                  <input
-                    type="text"
-                    placeholder="Address Line 2 (Landmark, Suite, etc. - Optional)"
-                    value={newAddr.line2 || ''}
-                    onChange={(e) => handleAddrChange('line2', e.target.value)}
-                    className="w-full border border-zinc-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none bg-white"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* City */}
-                  <div className="space-y-1">
-                    <input
-                      type="text"
-                      placeholder="City *"
-                      value={newAddr.city || ''}
-                      onChange={(e) => handleAddrChange('city', e.target.value)}
-                      className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none bg-white ${
-                        addrErrors.city ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
-                      }`}
-                    />
-                    {addrErrors.city && <p className="text-[11px] text-red-600 font-medium">{addrErrors.city}</p>}
-                  </div>
-
-                  {/* State */}
-                  <div className="space-y-1">
-                    <select
-                      value={newAddr.state || 'Tamil Nadu'}
-                      onChange={(e) => handleAddrChange('state', e.target.value)}
-                      className={`w-full border rounded-lg p-2.5 text-xs focus:ring-2 focus:outline-none bg-white ${
-                        addrErrors.state ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
-                      }`}
-                    >
-                      {INDIAN_STATES.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                    {addrErrors.state && <p className="text-[11px] text-red-600 font-medium">{addrErrors.state}</p>}
-                  </div>
-
-                  {/* Pincode */}
-                  <div className="space-y-1">
-                    <input
-                      type="text"
-                      maxLength={6}
-                      placeholder="Pincode (6 digits) *"
-                      value={newAddr.pincode || ''}
-                      onChange={(e) => handleAddrChange('pincode', e.target.value.replace(/\D/g, ''))}
-                      className={`w-full border rounded-lg p-2.5 text-xs font-mono focus:ring-2 focus:outline-none bg-white ${
-                        addrErrors.pincode ? 'border-red-500 bg-red-50/40 focus:ring-red-500' : 'border-zinc-300 focus:ring-amber-700'
-                      }`}
-                    />
-                    {addrErrors.pincode && <p className="text-[11px] text-red-600 font-medium">{addrErrors.pincode}</p>}
-                  </div>
-                </div>
-
-                <div className="flex gap-2 justify-end pt-2">
-                  {addresses.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAddingNew(false);
-                        setAddrErrors({});
-                      }}
-                      className="px-4 py-2 border border-zinc-300 text-xs font-semibold rounded-lg hover:bg-zinc-100 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={savingAddr}
-                    className="px-5 py-2 bg-amber-800 text-white font-bold text-xs uppercase rounded-lg hover:bg-amber-900 transition-colors disabled:opacity-50"
-                  >
-                    {savingAddr ? 'Saving...' : 'Save & Select'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-
-          {/* Shipping Details */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Truck className="w-5 h-5 text-amber-800" />
-                <h3 className="font-serif font-bold text-lg text-zinc-900">2. Shipping Details</h3>
-              </div>
-              <span className="text-[11px] font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
-                Origin: Dharmapuri, Tamil Nadu
-              </span>
-            </div>
-
-            <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200 flex items-center justify-between text-xs">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <p className="font-bold text-zinc-900">Express Courier Delivery</p>
-                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60">
-                    {isTamilNadu(activeState) ? 'Tamil Nadu Rate' : 'National Rate'}
-                  </span>
-                </div>
-                <p className="text-zinc-500">
-                  Delivering to: <span className="font-semibold text-zinc-800">{activeState || 'Tamil Nadu'}</span>
-                </p>
-                <p className="text-amber-800 font-medium text-[11px]">
-                  Estimated delivery: 2 – 4 business days
-                </p>
-              </div>
-
-              <div className="text-right">
-                {isFreeShippingCoupon ? (
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded uppercase border border-emerald-200">
-                      Free
-                    </span>
-                    <p className="text-[10px] text-zinc-400 line-through">₹{shippingRate}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-0.5">
-                    <span className="text-base font-extrabold text-zinc-900">
-                      {STORE_CONFIG.defaultPricing.currency}{shippingRate}
-                    </span>
-                    <p className="text-[10px] text-zinc-400">
-                      {isTamilNadu(activeState) ? '₹150 (TN)' : '₹200 (Other states)'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-[11px] text-zinc-500 bg-amber-50/50 p-2.5 rounded-lg border border-amber-100">
-              <span>Standard delivery fee: <strong>₹150 for Tamil Nadu</strong> · <strong>₹200 for all other states</strong></span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Summary + Pay */}
-        <div className="lg:col-span-5">
-          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-5 sticky top-24">
-            <h3 className="font-serif font-bold text-lg text-zinc-900 border-b border-zinc-100 pb-4">Order Summary</h3>
-            <div className="max-h-52 overflow-y-auto space-y-3 pr-1">
-              {cart.map(({ product, quantity, size }) => (
-                <div key={`${product.id}__${size || ''}`} className="flex justify-between items-center text-xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-9 h-11 bg-amber-50 rounded border flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-amber-900 overflow-hidden">
-                      {product.images?.[0] ? (
-                        <img src={product.images[0]} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        product.name.slice(0, 4)
+                    <div>
+                      <p className="font-semibold text-zinc-900 line-clamp-1">{product.name}</p>
+                      {size && (
+                        <p className="text-[11px] text-zinc-500">{size}</p>
                       )}
                     </div>
-                    <div>
-                      <p className="font-semibold text-zinc-900 line-clamp-1 max-w-[140px]">{product.name}</p>
-                      {size && <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Size: {size}</p>}
-                      <p className="text-zinc-400">×{quantity}</p>
-                    </div>
                   </div>
-                  <span className="font-bold text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{(product.price * quantity).toLocaleString()}</span>
+                  <span className="font-bold text-zinc-900">
+                    {STORE_CONFIG.defaultPricing.currency}
+                    {(product.price * quantity).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                 </div>
               ))}
             </div>
 
-            <div className="space-y-2.5 pt-3 border-t border-zinc-100 text-xs">
-              <div className="flex justify-between text-zinc-500">
-                <span>Subtotal</span>
-                <span className="font-medium text-zinc-900">{STORE_CONFIG.defaultPricing.currency}{subtotal.toLocaleString()}</span>
+            {/* Discount Code */}
+            <form onSubmit={handleApplyDiscountSubmit} className="space-y-2 pt-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Discount code"
+                  value={discountInput}
+                  onChange={(e) => setDiscountInput(e.target.value.toUpperCase())}
+                  className="flex-1 bg-white border border-zinc-300 rounded-lg px-3 py-2 text-xs font-mono uppercase focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={!discountInput.trim() || isApplyingDiscount}
+                  className="px-4 py-2 bg-zinc-200 text-zinc-800 text-xs font-bold rounded-lg hover:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isApplyingDiscount ? '...' : 'Apply'}
+                </button>
               </div>
-              {discountAmount > 0 && (
-                <div className="flex justify-between text-emerald-700 font-semibold">
-                  <span>Discount ({coupon?.code})</span>
-                  <span>-{STORE_CONFIG.defaultPricing.currency}{discountAmount}</span>
+
+              {coupon && (
+                <div className="flex items-center justify-between p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs">
+                  <div>
+                    <span className="font-mono font-bold text-amber-900">{coupon.code}</span>
+                    <span className="text-zinc-500 ml-2">
+                      ({coupon.type === 'free_shipping' ? 'Free Shipping' : `₹${discountAmount} off`})
+                    </span>
+                  </div>
+                  <button type="button" onClick={removeCoupon} className="text-zinc-400 hover:text-red-600">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
-              <div className="flex justify-between text-zinc-500">
-                <span>Shipping ({activeState || 'Tamil Nadu'})</span>
+            </form>
+
+            {/* Calculations */}
+            <div className="space-y-2 pt-2 text-xs text-zinc-600 border-t border-zinc-200">
+              <div className="flex justify-between">
+                <span>Subtotal</span>
                 <span className="font-medium text-zinc-900">
-                  {isFreeShippingCoupon ? (
-                    <span className="text-emerald-600 font-bold">Free</span>
+                  {STORE_CONFIG.defaultPricing.currency}
+                  {subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-emerald-700 font-medium">
+                  <span>Discount</span>
+                  <span>
+                    -{STORE_CONFIG.defaultPricing.currency}
+                    {discountAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span>Shipping</span>
+                <span className="font-medium text-zinc-900">
+                  {!hasStateSelected ? (
+                    <span className="text-zinc-500 font-normal">Choose shipping destination</span>
+                  ) : isFreeShippingCoupon ? (
+                    <span className="text-emerald-700 font-bold uppercase">Free</span>
                   ) : (
-                    `${STORE_CONFIG.defaultPricing.currency}${shippingRate}`
+                    `${STORE_CONFIG.defaultPricing.currency}${shippingRate.toFixed(2)}`
                   )}
                 </span>
               </div>
-              <div className="pt-2.5 border-t border-zinc-200 flex justify-between font-extrabold text-zinc-900 text-sm">
+              <div className="flex justify-between items-baseline pt-2 border-t border-zinc-200 text-sm font-bold text-zinc-900">
                 <span>Total</span>
-                <span className="text-xl text-amber-900">
-                  {STORE_CONFIG.defaultPricing.currency}{finalTotal.toLocaleString()}
+                <span className="text-lg">
+                  {STORE_CONFIG.defaultPricing.currency}
+                  {finalTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
+          </div>
+        )}
+      </div>
 
-            <button
-              onClick={handlePay}
-              disabled={isPayDisabled}
-              className="w-full py-4 bg-amber-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-900 disabled:opacity-50 transition-colors shadow-lg flex items-center justify-center gap-2"
-            >
-              {payLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Processing Payment...</span>
-                </>
-              ) : !selectedAddress ? (
-                <span>Select Delivery Address</span>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14">
+          {/* =========================================================================
+              LEFT COLUMN: Contact, Delivery, Shipping method, Payment, Terms, Button
+              ========================================================================= */}
+          <div className="lg:col-span-7 space-y-8">
+            {/* Return to store link */}
+            <div>
+              <Link
+                href="/shop"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-600 hover:text-amber-800 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Return to store</span>
+              </Link>
+            </div>
+
+            {/* Error notifications */}
+            {payError && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs font-medium text-red-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-600" />
+                  <span>{payError}</span>
+                </div>
+                {rzpError ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRzpError(false);
+                      setPayError('');
+                      setScriptRetryKey((k) => k + 1);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-900 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors flex-shrink-0"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Retry Gateway</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPayError('');
+                      handleProceedPayment();
+                    }}
+                    disabled={payLoading}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-700 text-white text-xs font-bold rounded-lg hover:bg-red-800 transition-colors flex-shrink-0"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Try Again</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {stockError && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs font-medium text-amber-900 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                  <span>{stockError}</span>
+                </div>
+                <Link href="/cart" className="font-bold underline text-amber-900 ml-2 whitespace-nowrap">
+                  Edit Cart
+                </Link>
+              </div>
+            )}
+
+            {/* Section: Contact */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-zinc-900 font-sans tracking-tight">Contact</h2>
+                {!user ? (
+                  <Link href="/login?redirect=/checkout" className="text-xs text-amber-800 font-medium hover:underline">
+                    Have an account? Log in
+                  </Link>
+                ) : (
+                  <span className="text-xs text-zinc-500">
+                    Logged in as <strong className="text-zinc-800">{user.name}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <input
+                  type="email"
+                  id="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
+                  className={`w-full px-3.5 py-3 border rounded-lg text-xs bg-white focus:outline-none transition-colors ${
+                    touched.email && !emailValid
+                      ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                      : 'border-zinc-300 focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900'
+                  }`}
+                />
+                {touched.email && !emailValid && (
+                  <p className="text-[11px] text-red-600 mt-1">Please enter a valid email address.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Section: Delivery */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-zinc-900 font-sans tracking-tight">Delivery</h2>
+                {savedAddresses.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-zinc-500">Saved Address:</span>
+                    <select
+                      value={selectedAddressId}
+                      onChange={(e) => handleSelectSavedAddress(e.target.value)}
+                      className="text-xs border border-zinc-300 rounded px-2 py-1 bg-white text-zinc-800 focus:outline-none focus:border-zinc-900"
+                    >
+                      {savedAddresses.map((addr) => (
+                        <option key={addr.id} value={addr.id}>
+                          {addr.name} ({addr.city}, {addr.state})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {/* Full name */}
+                <div>
+                  <input
+                    type="text"
+                    id="fullName"
+                    placeholder="Full name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    onBlur={() => setTouched((prev) => ({ ...prev, fullName: true }))}
+                    className={`w-full px-3.5 py-3 border rounded-lg text-xs bg-white focus:outline-none transition-colors ${
+                      touched.fullName && !nameValid
+                        ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                        : 'border-zinc-300 focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900'
+                    }`}
+                  />
+                  {touched.fullName && !nameValid && (
+                    <p className="text-[11px] text-red-600 mt-1">Please enter your full name.</p>
+                  )}
+                </div>
+
+                {/* Address Line 1 */}
+                <div>
+                  <input
+                    type="text"
+                    id="addressLine1"
+                    placeholder="Address (House No., Building, Street)"
+                    value={addressLine1}
+                    onChange={(e) => setAddressLine1(e.target.value)}
+                    onBlur={() => setTouched((prev) => ({ ...prev, addressLine1: true }))}
+                    className={`w-full px-3.5 py-3 border rounded-lg text-xs bg-white focus:outline-none transition-colors ${
+                      touched.addressLine1 && !addressValid
+                        ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                        : 'border-zinc-300 focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900'
+                    }`}
+                  />
+                  {touched.addressLine1 && !addressValid && (
+                    <p className="text-[11px] text-red-600 mt-1">Please enter your street address.</p>
+                  )}
+                </div>
+
+                {/* Address Line 2 (Optional) */}
+                <div>
+                  <input
+                    type="text"
+                    id="addressLine2"
+                    placeholder="Apartment, suite, landmark, etc. (optional)"
+                    value={addressLine2}
+                    onChange={(e) => setAddressLine2(e.target.value)}
+                    className="w-full px-3.5 py-3 border border-zinc-300 rounded-lg text-xs bg-white focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-colors"
+                  />
+                </div>
+
+                {/* City & Pincode */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <input
+                      type="text"
+                      id="city"
+                      placeholder="City"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      onBlur={() => setTouched((prev) => ({ ...prev, city: true }))}
+                      className={`w-full px-3.5 py-3 border rounded-lg text-xs bg-white focus:outline-none transition-colors ${
+                        touched.city && !cityValid
+                          ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                          : 'border-zinc-300 focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900'
+                      }`}
+                    />
+                    {touched.city && !cityValid && (
+                      <p className="text-[11px] text-red-600 mt-1">Please enter your city.</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <input
+                      type="text"
+                      id="pincode"
+                      maxLength={6}
+                      placeholder="PIN code (6 digits)"
+                      value={pincode}
+                      onChange={(e) => setPincode(e.target.value.replace(/\D/g, ''))}
+                      onBlur={() => setTouched((prev) => ({ ...prev, pincode: true }))}
+                      className={`w-full px-3.5 py-3 border rounded-lg text-xs font-mono bg-white focus:outline-none transition-colors ${
+                        touched.pincode && !pincodeValid
+                          ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                          : 'border-zinc-300 focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900'
+                      }`}
+                    />
+                    {touched.pincode && !pincodeValid && (
+                      <p className="text-[11px] text-red-600 mt-1">Enter a valid 6-digit PIN code.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Country */}
+                <div className="relative">
+                  <label htmlFor="country" className="block text-[10px] text-zinc-500 font-medium mb-1 uppercase tracking-wider">
+                    Country
+                  </label>
+                  <select
+                    id="country"
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full px-3.5 py-3 border border-zinc-300 rounded-lg text-xs bg-white focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 focus:outline-none appearance-none pr-8 cursor-pointer"
+                  >
+                    <option value="India">India</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-zinc-400 absolute right-3 bottom-3.5 pointer-events-none" />
+                </div>
+
+                {/* State */}
+                <div className="relative">
+                  <label htmlFor="state" className="block text-[10px] text-zinc-500 font-medium mb-1 uppercase tracking-wider">
+                    State
+                  </label>
+                  <select
+                    id="state"
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
+                    onBlur={() => setTouched((prev) => ({ ...prev, state: true }))}
+                    className={`w-full px-3.5 py-3 border rounded-lg text-xs bg-white focus:outline-none appearance-none pr-8 cursor-pointer transition-colors ${
+                      touched.state && !stateValid
+                        ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                        : 'border-zinc-300 focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900'
+                    }`}
+                  >
+                    <option value="">Select State / UT</option>
+                    {INDIAN_STATES.map((st) => (
+                      <option key={st} value={st}>
+                        {st}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-zinc-400 absolute right-3 bottom-3.5 pointer-events-none" />
+                  {touched.state && !stateValid && (
+                    <p className="text-[11px] text-red-600 mt-1">Please select your delivery state.</p>
+                  )}
+                </div>
+
+                {/* Phone number with country code */}
+                <div>
+                  <label htmlFor="phone" className="block text-[10px] text-zinc-500 font-medium mb-1 uppercase tracking-wider">
+                    Phone number
+                  </label>
+                  <div className="flex border border-zinc-300 rounded-lg overflow-hidden focus-within:border-zinc-900 focus-within:ring-1 focus-within:ring-zinc-900 bg-white">
+                    <div className="flex items-center gap-1.5 px-3 bg-zinc-50 border-r border-zinc-200 text-xs font-semibold text-zinc-700 flex-shrink-0 select-none">
+                      <span>🇮🇳</span>
+                      <span>+91</span>
+                    </div>
+                    <input
+                      type="tel"
+                      id="phone"
+                      maxLength={10}
+                      placeholder="10-digit mobile number"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                      onBlur={() => setTouched((prev) => ({ ...prev, phone: true }))}
+                      className="w-full px-3 py-3 text-xs font-mono focus:outline-none bg-transparent"
+                    />
+                  </div>
+                  {touched.phone && !phoneValid && (
+                    <p className="text-[11px] text-red-600 mt-1">Please enter a valid 10-digit mobile number.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Section: Shipping method */}
+            <div className="space-y-3">
+              <h2 className="text-base font-bold text-zinc-900 font-sans tracking-tight">Shipping method</h2>
+
+              {!hasStateSelected ? (
+                <div className="p-4 bg-zinc-100/70 border border-zinc-200 rounded-xl text-center text-xs text-zinc-500">
+                  Enter delivery details to view shipping options
+                </div>
               ) : (
-                <>
-                  <CreditCard className="w-4 h-4" />
-                  <span>Pay {STORE_CONFIG.defaultPricing.currency}{finalTotal.toLocaleString()} via Razorpay</span>
-                </>
+                <div className="p-4 bg-zinc-50 border border-zinc-300 rounded-xl flex items-center justify-between text-xs transition-all">
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-zinc-900 flex items-center gap-2">
+                      <Truck className="w-4 h-4 text-amber-800" />
+                      <span>Express Courier Delivery</span>
+                    </p>
+                    <p className="text-[11px] text-zinc-500">
+                      Estimated delivery: 2 – 4 business days ({isTamilNadu(state) ? 'Tamil Nadu' : 'National'} dispatch)
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    {isFreeShippingCoupon ? (
+                      <span className="font-bold text-emerald-700 uppercase bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-xs">
+                        Free
+                      </span>
+                    ) : (
+                      <span className="font-bold text-zinc-900 text-sm">
+                        {STORE_CONFIG.defaultPricing.currency}
+                        {shippingRate.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
-            </button>
-            <p className="text-[11px] text-zinc-400 text-center">UPI · Cards · Netbanking · Wallets · EMI</p>
+            </div>
+
+            {/* Section: Payment */}
+            <div className="space-y-3">
+              <h2 className="text-base font-bold text-zinc-900 font-sans tracking-tight">Payment</h2>
+
+              <div className="border border-zinc-300 rounded-xl overflow-hidden bg-white">
+                <div className="p-4 bg-zinc-50/50 flex items-center justify-between border-b border-zinc-200">
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="radio"
+                      id="razorpay"
+                      name="paymentMethod"
+                      defaultChecked
+                      className="text-zinc-900 focus:ring-zinc-900"
+                    />
+                    <label htmlFor="razorpay" className="text-xs font-semibold text-zinc-900 cursor-pointer">
+                      Razorpay (Cards, UPI, NetBanking, Wallets)
+                    </label>
+                  </div>
+                  <PaymentIcons />
+                </div>
+                <div className="p-4 bg-white text-xs text-zinc-500 text-center flex flex-col items-center justify-center gap-1.5 py-6">
+                  <Lock className="w-5 h-5 text-zinc-400 stroke-[1.5]" />
+                  <p className="text-zinc-600 font-medium">
+                    After clicking &ldquo;Continue&rdquo;, you will be redirected to Razorpay to complete your purchase securely.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Marketing & Terms Checkboxes */}
+            <div className="space-y-3 pt-2">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none text-xs text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={sendDeals}
+                  onChange={(e) => setSendDeals(e.target.checked)}
+                  className="mt-0.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+                />
+                <span>Send me exclusive deals, product news, and discounts by email.</span>
+              </label>
+
+              <div>
+                <label className="flex items-start gap-2.5 cursor-pointer select-none text-xs text-zinc-700 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={agreeTerms}
+                    onChange={(e) => setAgreeTerms(e.target.checked)}
+                    className="mt-0.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+                  />
+                  <span>
+                    I agree to{' '}
+                    <Link href="/terms" target="_blank" className="text-amber-800 underline hover:text-amber-900">
+                      Terms &amp; Conditions
+                    </Link>
+                    ,{' '}
+                    <Link href="/privacy" target="_blank" className="text-amber-800 underline hover:text-amber-900">
+                      Privacy policy
+                    </Link>{' '}
+                    and Refund policy.
+                  </span>
+                </label>
+                {touched.agreeTerms && !agreeTerms && (
+                  <p className="text-[11px] text-red-600 mt-1 pl-6">
+                    You must agree to the terms to proceed.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Continue Button & Razorpay terms disclaimer */}
+            <div className="space-y-3 pt-2">
+              <button
+                type="button"
+                onClick={handleProceedPayment}
+                disabled={payLoading || !isFormValid}
+                className="w-full py-4 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                {payLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Processing Order...</span>
+                  </>
+                ) : (
+                  <span>Continue</span>
+                )}
+              </button>
+
+              <p className="text-[11px] text-zinc-400 text-center leading-relaxed">
+                By using the payment initiation service provided by Razorpay, you confirm that you have read and agree with the{' '}
+                <Link href="/terms" target="_blank" className="underline hover:text-zinc-600">
+                  Terms &amp; Conditions
+                </Link>{' '}
+                and{' '}
+                <Link href="/privacy" target="_blank" className="underline hover:text-zinc-600">
+                  Privacy policy
+                </Link>
+                .
+              </p>
+            </div>
+          </div>
+
+          {/* =========================================================================
+              RIGHT COLUMN: Order Summary (Sticky on Desktop)
+              ========================================================================= */}
+          <div className="hidden lg:block lg:col-span-5">
+            <div className="sticky top-28 bg-zinc-50/70 border border-zinc-200/80 rounded-2xl p-6 shadow-sm space-y-6">
+              {/* Order Items List */}
+              <div className="space-y-4 max-h-72 overflow-y-auto pr-1 divide-y divide-zinc-200/60">
+                {cart.map(({ product, quantity, size }) => (
+                  <div key={`${product.id}__${size || ''}`} className="pt-3.5 first:pt-0 flex items-center justify-between gap-4 text-xs">
+                    <div className="flex items-center gap-3">
+                      {/* Product Thumbnail with quantity badge */}
+                      <div className="relative w-16 h-18 bg-white rounded-lg border border-zinc-200/80 overflow-hidden flex-shrink-0 flex items-center justify-center shadow-xs">
+                        {product.images?.[0] ? (
+                          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-[10px] text-zinc-400 font-semibold px-1 text-center">
+                            {product.name.slice(0, 4)}
+                          </span>
+                        )}
+                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-700 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow">
+                          {quantity}
+                        </span>
+                      </div>
+
+                      <div className="space-y-0.5">
+                        <p className="font-semibold text-zinc-900 line-clamp-1 max-w-[180px]">
+                          {product.name}
+                        </p>
+                        {size && (
+                          <p className="text-[11px] text-zinc-500 font-medium">
+                            {size}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <span className="font-bold text-zinc-900 flex-shrink-0">
+                      {STORE_CONFIG.defaultPricing.currency}
+                      {(product.price * quantity).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Discount Code Input Box */}
+              <form onSubmit={handleApplyDiscountSubmit} className="space-y-2 pt-2 border-t border-zinc-200/60">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Enter discount code"
+                    value={discountInput}
+                    onChange={(e) => setDiscountInput(e.target.value.toUpperCase())}
+                    className="flex-1 bg-white border border-zinc-300 rounded-lg px-3.5 py-2.5 text-xs font-mono font-bold uppercase focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-colors"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!discountInput.trim() || isApplyingDiscount}
+                    className="px-5 py-2.5 bg-zinc-200 text-zinc-800 text-xs font-bold rounded-lg hover:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isApplyingDiscount ? '...' : 'Apply'}
+                  </button>
+                </div>
+
+                {coupon && (
+                  <div className="flex items-center justify-between p-2.5 bg-amber-50/80 border border-amber-200 rounded-lg text-xs">
+                    <div>
+                      <span className="font-mono font-bold text-amber-900">{coupon.code}</span>
+                      <span className="text-zinc-500 ml-2">
+                        ({coupon.type === 'free_shipping' ? 'Free Shipping Applied' : `₹${discountAmount} Discount Applied`})
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={removeCoupon}
+                      className="p-1 text-zinc-400 hover:text-red-600 rounded-full transition-colors"
+                      title="Remove coupon"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {couponMessage && !coupon && (
+                  <div className="p-2.5 bg-red-50 text-red-800 border border-red-200 rounded-lg text-xs flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-red-600" />
+                    <span>{couponMessage.text}</span>
+                  </div>
+                )}
+              </form>
+
+              {/* Price Calculations */}
+              <div className="space-y-2.5 pt-3 border-t border-zinc-200/60 text-xs text-zinc-600">
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span className="font-semibold text-zinc-900">
+                    {STORE_CONFIG.defaultPricing.currency}
+                    {subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-medium">
+                    <span>Discount</span>
+                    <span>
+                      -{STORE_CONFIG.defaultPricing.currency}
+                      {discountAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex justify-between">
+                  <span>Shipping</span>
+                  <span className="font-medium text-zinc-900">
+                    {!hasStateSelected ? (
+                      <span className="text-zinc-500 font-normal">Choose shipping destination</span>
+                    ) : isFreeShippingCoupon ? (
+                      <span className="text-emerald-700 font-bold uppercase">Free</span>
+                    ) : (
+                      `${STORE_CONFIG.defaultPricing.currency}${shippingRate.toFixed(2)}`
+                    )}
+                  </span>
+                </div>
+
+                <div className="pt-3 border-t border-zinc-300 flex justify-between items-baseline text-sm font-extrabold text-zinc-900">
+                  <span>Total</span>
+                  <span className="text-xl text-zinc-900">
+                    {STORE_CONFIG.defaultPricing.currency}
+                    {finalTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

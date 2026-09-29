@@ -86,11 +86,7 @@ export default function CartPage() {
       alert('Please remove unavailable products from your cart before proceeding to checkout.');
       return;
     }
-    if (!user) {
-      router.push('/login?redirect=/checkout');
-    } else {
-      router.push('/checkout');
-    }
+    router.push('/checkout');
   };
 
   if (!cartLoaded) {
@@ -401,11 +397,9 @@ export default function CartPage() {
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
 
-            {!user && (
-              <p className="text-[11px] text-zinc-500 text-center">
-                🔒 You will be asked to log in or create an account to complete your order.
-              </p>
-            )}
+            <p className="text-[11px] text-zinc-500 text-center flex items-center justify-center gap-1">
+              <span>🔒 Guaranteed Safe &amp; Secure Checkout</span>
+            </p>
           </div>
         </div>
       </div>

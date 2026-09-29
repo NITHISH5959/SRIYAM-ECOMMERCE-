@@ -666,7 +666,12 @@ export async function createOrder(order: Partial<Order>): Promise<Order> {
       razorpay_payment_id: order.razorpay_payment_id,
     });
 
-    const { data, error } = await supabase.from('orders').insert([order]).select(ORDER_SELECT_FIELDS).single();
+    const sanitizedOrder = {
+      ...order,
+      user_id: (order.user_id && isRealUuid(order.user_id)) ? order.user_id : null,
+    };
+
+    const { data, error } = await supabase.from('orders').insert([sanitizedOrder]).select(ORDER_SELECT_FIELDS).single();
     if (error) {
       console.error('[createOrder] Supabase insert ERROR:', {
         code: error.code,

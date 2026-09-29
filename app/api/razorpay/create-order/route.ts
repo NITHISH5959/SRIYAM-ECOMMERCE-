@@ -52,16 +52,13 @@ export async function POST(request: Request) {
       items: CreateOrderItem[];
       coupon_code?: string;
       shipping_fee: number;
-      user_id: string;
+      user_id?: string;
       shipping_address?: Partial<Address>;
     } = body;
 
     // ── Input validation ────────────────────────────────────────────────────
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ success: false, message: 'Cart is empty.' }, { status: 400 });
-    }
-    if (!user_id) {
-      return NextResponse.json({ success: false, message: 'User not authenticated.' }, { status: 401 });
     }
 
     // ── 1. Fetch current prices from DB (prevents price spoofing) ──────────
@@ -172,7 +169,7 @@ export async function POST(request: Request) {
       .join('|');
 
     const notes: Record<string, string> = {
-      user_id: user_id.slice(0, 256),
+      user_id: user_id ? user_id.slice(0, 256) : 'guest',
       coupon: verifiedCouponCode.slice(0, 256),
       subtotal: String(calculatedSubtotal),
       discount: String(calculatedDiscount),
@@ -195,6 +192,14 @@ export async function POST(request: Request) {
     if (shipping_address?.id) {
       notes.address_id = String(shipping_address.id).slice(0, 256);
     }
+    if (shipping_address?.name) notes.cust_name = shipping_address.name.slice(0, 256);
+    if (shipping_address?.phone) notes.cust_phone = shipping_address.phone.slice(0, 256);
+    if ((shipping_address as any)?.email) notes.cust_email = (shipping_address as any).email.slice(0, 256);
+    if (shipping_address?.line1) notes.cust_line1 = shipping_address.line1.slice(0, 256);
+    if (shipping_address?.line2) notes.cust_line2 = shipping_address.line2.slice(0, 256);
+    if (shipping_address?.city) notes.cust_city = shipping_address.city.slice(0, 256);
+    if (shipping_address?.state) notes.cust_state = shipping_address.state.slice(0, 256);
+    if (shipping_address?.pincode) notes.cust_pincode = shipping_address.pincode.slice(0, 256);
 
     // ── 7. Create Razorpay order ──────────────────────────────────────────
     const key_id = process.env.RAZORPAY_KEY_ID || '';
