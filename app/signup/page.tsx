@@ -12,21 +12,24 @@ import { Mail, Lock, User, Phone, ArrowRight, Eye, EyeOff } from 'lucide-react';
 function SignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectUrl = searchParams.get('redirect') || '/';
+  const redirectUrl = searchParams.get('redirect') || '/account/orders';
 
   const { setUser } = useCart();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isAlreadyRegistered, setIsAlreadyRegistered] = useState(false);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setErrorMessage('');
+    setIsAlreadyRegistered(false);
 
     if (password.length < 6) {
       setErrorMessage('Password must be at least 6 characters.');
@@ -34,15 +37,25 @@ function SignupContent() {
       return;
     }
 
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match. Please check and try again.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const supabase = createClient();
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanFullName = fullName.trim();
+      const cleanPhoneNumber = phone.trim();
+
       const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
+        email: cleanEmail,
+        password: password,
         options: {
           data: {
-            full_name: fullName,
-            phone: phone,
+            full_name: cleanFullName,
+            phone: cleanPhoneNumber,
           },
         },
       });
@@ -50,9 +63,11 @@ function SignupContent() {
       if (error) {
         if (
           error.message.toLowerCase().includes('already registered') ||
-          error.message.toLowerCase().includes('already exists')
+          error.message.toLowerCase().includes('already exists') ||
+          error.message.toLowerCase().includes('unique violation')
         ) {
-          setErrorMessage('An account with this email address already exists. Please sign in instead.');
+          setIsAlreadyRegistered(true);
+          setErrorMessage('An account with this email address already exists.');
         } else {
           setErrorMessage(error.message || 'Failed to create account. Please try again.');
         }
@@ -64,22 +79,28 @@ function SignupContent() {
         return;
       }
 
-      // Explicitly upsert profile row to guarantee profile existence
+      // Explicitly upsert profile row to guarantee full_name, phone, email exist
       try {
         await supabase.from('profiles').upsert({
           id: data.user.id,
-          full_name: fullName,
-          phone: phone,
+          full_name: cleanFullName,
+          phone: cleanPhoneNumber,
+          email: cleanEmail,
           is_admin: false,
         });
-      } catch {
-        // Trigger or fallback handles if client upsert is constrained
+      } catch {}
+
+      // Call claim-orders step to double-match and link past guest orders
+      try {
+        await fetch('/api/account/claim-orders', { method: 'POST' });
+      } catch (claimErr) {
+        console.warn('[signup] Claim orders warning:', claimErr);
       }
 
       const newUser = {
         id: data.user.id,
-        email: email,
-        name: fullName || email.split('@')[0],
+        email: cleanEmail,
+        name: cleanFullName || cleanEmail.split('@')[0],
         isAdmin: false,
       };
       setUser(newUser);
@@ -108,13 +129,23 @@ function SignupContent() {
           Create Account
         </h1>
         <p className="text-xs text-zinc-500">
-          Join {STORE_CONFIG.name} for seamless checkout and order tracking.
+          Join {STORE_CONFIG.name} to track orders and save delivery addresses.
         </p>
       </div>
 
       {errorMessage && (
-        <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
-          {errorMessage}
+        <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200 space-y-1">
+          <p>{errorMessage}</p>
+          {isAlreadyRegistered && (
+            <p>
+              <Link
+                href={`/login?redirect=${encodeURIComponent(redirectUrl)}`}
+                className="font-bold underline text-red-900 hover:text-red-700"
+              >
+                Click here to Sign In &rarr;
+              </Link>
+            </p>
+          )}
         </div>
       )}
 
@@ -155,12 +186,13 @@ function SignupContent() {
 
         <div className="space-y-1">
           <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
-            Phone Number
+            Phone Number *
           </label>
           <div className="relative">
             <Phone className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
             <input
               type="tel"
+              required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="+91 98765 43210"
@@ -191,6 +223,23 @@ function SignupContent() {
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
+            Confirm Password *
+          </label>
+          <div className="relative">
+            <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
+            <input
+              type={showPassword ? 'text' : 'password'}
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter your password"
+              className="w-full pl-9 pr-3 py-2.5 border border-zinc-300 rounded-lg text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none"
+            />
           </div>
         </div>
 

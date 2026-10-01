@@ -29,6 +29,8 @@ export async function createClient() {
   );
 }
 
+export { createClient as createServerClient };
+
 import { isSupabaseConfigured } from './client';
 
 /**

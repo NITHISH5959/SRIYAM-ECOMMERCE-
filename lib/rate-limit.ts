@@ -79,6 +79,7 @@ export const createOrderLimiter = createRateLimiter({ limit: 10, windowMs: 60_00
 export const verifyPaymentLimiter = createRateLimiter({ limit: 5, windowMs: 60_000 });
 export const trackOrderLimiter = createRateLimiter({ limit: 15, windowMs: 60_000 });
 export const searchLimiter = createRateLimiter({ limit: 60, windowMs: 60_000 });
+export const claimOrdersLimiter = createRateLimiter({ limit: 5, windowMs: 60_000 });
 
 /** Extract the real client IP from Next.js request headers */
 export function getClientIp(request: Request): string {

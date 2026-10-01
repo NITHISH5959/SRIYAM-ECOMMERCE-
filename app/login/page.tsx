@@ -12,7 +12,7 @@ import { Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectUrl = searchParams.get('redirect') || '/';
+  const redirectUrl = searchParams.get('redirect') || '/account/orders';
 
   const { setUser } = useCart();
   const [email, setEmail] = useState('');
@@ -21,6 +21,47 @@ function LoginContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
+  const [isForgotMode, setIsForgotMode] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState('');
+
+  const handleSendResetEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotLoading(true);
+    setForgotError('');
+    setForgotSent(false);
+
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      if (!cleanEmail || !cleanEmail.includes('@')) {
+        setForgotError('Please enter a valid email address.');
+        setForgotLoading(false);
+        return;
+      }
+
+      const supabase = createClient();
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sriyam.in';
+      const redirectTo = `${origin}/reset-password`;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo,
+      });
+
+      if (error) {
+        setForgotError(error.message || 'Failed to send reset link. Please try again.');
+        setForgotLoading(false);
+        return;
+      }
+
+      setForgotSent(true);
+    } catch (err: any) {
+      setForgotError(err?.message || 'An unexpected error occurred. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -28,8 +69,10 @@ function LoginContent() {
 
     try {
       const supabase = createClient();
+      const cleanEmail = email.trim().toLowerCase();
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: cleanEmail,
         password,
       });
 
@@ -39,6 +82,11 @@ function LoginContent() {
       }
 
       if (data?.user) {
+        // Trigger claim-orders step in background to link any recent guest orders
+        try {
+          fetch('/api/account/claim-orders', { method: 'POST' }).catch(() => {});
+        } catch {}
+
         // Query profiles.is_admin so the Admin nav link only shows for real admins.
         let isAdmin = false;
         try {
@@ -54,8 +102,8 @@ function LoginContent() {
 
         setUser({
           id: data.user.id,
-          email: data.user.email || email,
-          name: data.user.user_metadata?.full_name || email.split('@')[0],
+          email: data.user.email || cleanEmail,
+          name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
           isAdmin,
         });
         router.push(redirectUrl);
@@ -81,71 +129,157 @@ function LoginContent() {
           />
         </div>
         <h1 className="text-2xl font-serif font-bold text-zinc-900">
-          Sign In to {STORE_CONFIG.name}
+          {isForgotMode ? 'Reset Password' : `Sign In to ${STORE_CONFIG.name}`}
         </h1>
         <p className="text-xs text-zinc-500">
-          Sign in to access your orders and saved details.
+          {isForgotMode
+            ? 'Enter your email to receive a secure password reset link.'
+            : 'Sign in to access your orders and saved details.'}
         </p>
       </div>
 
-      {errorMessage && (
-        <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
-          {errorMessage}
-        </div>
-      )}
+      {isForgotMode ? (
+        <div className="space-y-4">
+          {forgotError && (
+            <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
+              {forgotError}
+            </div>
+          )}
 
-      <form onSubmit={handleLogin} className="space-y-4">
-        <div className="space-y-1">
-          <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
-            Email Address
-          </label>
-          <div className="relative">
-            <Mail className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full pl-9 pr-3 py-2.5 border border-zinc-300 rounded-lg text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none"
-            />
-          </div>
-        </div>
+          {forgotSent ? (
+            <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl border border-emerald-200 space-y-3 text-center">
+              <p className="font-semibold">Reset link sent!</p>
+              <p className="text-emerald-700 leading-relaxed">
+                We sent a password reset link to <strong className="font-mono text-emerald-900">{email}</strong>. Open the link to set your new password.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotSent(false);
+                  setIsForgotMode(false);
+                }}
+                className="text-xs font-bold text-emerald-900 underline hover:text-emerald-700"
+              >
+                Back to sign in
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSendResetEmail} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full pl-9 pr-3 py-2.5 border border-zinc-300 rounded-lg text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none"
+                  />
+                </div>
+              </div>
 
-        <div className="space-y-1">
-          <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
-            Password
-          </label>
-          <div className="relative">
-            <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
-            <input
-              type={showPassword ? 'text' : 'password'}
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full pl-9 pr-9 py-2.5 border border-zinc-300 rounded-lg text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none"
-            />
+              <button
+                type="submit"
+                disabled={forgotLoading}
+                className="w-full py-3.5 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 disabled:opacity-50 transition-colors shadow-md flex items-center justify-center gap-2"
+              >
+                <span>{forgotLoading ? 'Sending Link...' : 'Email Reset Link'}</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsForgotMode(false);
+                    setForgotError('');
+                  }}
+                  className="text-xs text-zinc-500 hover:text-amber-800 font-medium"
+                >
+                  &larr; Back to sign in with password
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      ) : (
+        <>
+          {errorMessage && (
+            <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
+              {errorMessage}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full pl-9 pr-3 py-2.5 border border-zinc-300 rounded-lg text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsForgotMode(true);
+                    setErrorMessage('');
+                  }}
+                  className="text-[11px] text-amber-800 hover:underline font-medium"
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full pl-9 pr-9 py-2.5 border border-zinc-300 rounded-lg text-xs focus:ring-2 focus:ring-amber-700 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-zinc-400 hover:text-zinc-600 transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
             <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-3 text-zinc-400 hover:text-zinc-600 transition-colors"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3.5 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 disabled:opacity-50 transition-colors shadow-md flex items-center justify-center gap-2"
             >
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <span>{isLoading ? 'Signing in...' : 'Sign In'}</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
-          </div>
-        </div>
-
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full py-3.5 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 disabled:opacity-50 transition-colors shadow-md flex items-center justify-center gap-2"
-        >
-          <span>{isLoading ? 'Signing in...' : 'Sign In'}</span>
-          <ArrowRight className="w-4 h-4" />
-        </button>
-      </form>
+          </form>
+        </>
+      )}
 
       <div className="pt-4 border-t border-zinc-100 text-center">
         <p className="text-xs text-zinc-500">

@@ -253,4 +253,12 @@ create extension if not exists pg_trgm;
 create index if not exists idx_products_is_active on public.products(is_active);
 create index if not exists idx_products_name_trgm on public.products using gin (name gin_trgm_ops);
 create index if not exists idx_products_description_trgm on public.products using gin (description gin_trgm_ops);
-create index if not exists idx_categories_name_trgm on public.categories using gin (name gin_trgm_ops);
+create index if not exists idx_categories_name_trgm on public.categories using gin (name gin_trgm_ops);
+
+-- =============================================
+-- MIGRATION: Guest Order Claim Performance Indexes
+-- Run this in Supabase SQL Editor:
+-- =============================================
+create index if not exists idx_orders_user_id on public.orders(user_id);
+create index if not exists idx_orders_contact_email on public.orders(lower(contact_email));
+create index if not exists idx_addresses_user_id on public.addresses(user_id);
