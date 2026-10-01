@@ -98,6 +98,73 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
   return result;
 }
 
+export async function searchProducts(rawQuery: string, limit = 24): Promise<Product[]> {
+  const sanitized = (rawQuery || '')
+    .replace(/[%_,()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!sanitized || sanitized.length < 2) {
+    return [];
+  }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createAdminClient() || createClient();
+
+      // Find any categories matching the search term
+      const { data: matchedCats, error: catError } = await supabase
+        .from('categories')
+        .select('id')
+        .ilike('name', `%${sanitized}%`);
+
+      if (catError) {
+        console.warn('[searchProducts category lookup warning]', catError);
+      }
+
+      const catIds = (matchedCats || []).map(c => c.id).filter(Boolean);
+
+      // Build or filter for name, description, and matched category IDs
+      let filterClause = `name.ilike.%${sanitized}%,description.ilike.%${sanitized}%`;
+      if (catIds.length > 0) {
+        filterClause += `,category_id.in.(${catIds.join(',')})`;
+      }
+
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, slug, description, price, compare_at_price, images, stock, weight_grams, is_active, is_featured, category:categories(id, name, slug)')
+        .eq('is_active', true)
+        .or(filterClause)
+        .limit(limit);
+
+      if (error) {
+        console.error('[searchProducts Supabase query error]', error);
+        return [];
+      }
+
+      return (data as unknown as Product[]) || [];
+    } catch (err) {
+      console.error('[searchProducts fatal error]', err);
+      return [];
+    }
+  }
+
+  // Fallback ONLY for local development without configured Supabase
+  if (process.env.NODE_ENV !== 'production') {
+    const qLower = sanitized.toLowerCase();
+    const results = memoryProducts.filter(p => {
+      if (p.is_active === false) return false;
+      const nameMatch = p.name.toLowerCase().includes(qLower);
+      const descMatch = (p.description || '').toLowerCase().includes(qLower);
+      const catMatch = (p.category?.name || '').toLowerCase().includes(qLower);
+      return nameMatch || descMatch || catMatch;
+    });
+    return results.slice(0, limit);
+  }
+
+  return [];
+}
+
 export async function getFeaturedProducts(): Promise<Product[]> {
   try {
     const all = await getProducts();

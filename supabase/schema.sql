@@ -242,4 +242,15 @@ begin
   set stock = greatest(0, stock - qty)
   where id = p_variant_id::uuid;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer;
+
+-- =============================================
+-- MIGRATION: Search Performance Indexes
+-- Run this in Supabase SQL Editor:
+-- =============================================
+create extension if not exists pg_trgm;
+
+create index if not exists idx_products_is_active on public.products(is_active);
+create index if not exists idx_products_name_trgm on public.products using gin (name gin_trgm_ops);
+create index if not exists idx_products_description_trgm on public.products using gin (description gin_trgm_ops);
+create index if not exists idx_categories_name_trgm on public.categories using gin (name gin_trgm_ops);

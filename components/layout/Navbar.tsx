@@ -7,6 +7,7 @@ import { useCart } from '@/context/CartContext';
 import { STORE_CONFIG } from '@/lib/config';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { ShoppingBag, Menu, X, MessageCircle, ShieldCheck, User, LogOut, Package, MapPin, ChevronDown, CheckCircle2, Truck } from 'lucide-react';
+import SearchBar from './SearchBar';
 
 // ── Slide-in toast that auto-dismisses ────────────────────────────────────────
 function Toast({ message }: { message: string }) {
@@ -188,6 +189,9 @@ export default function Navbar() {
                 <span>Admin</span>
               </Link>
             )}
+
+            {/* Search Bar & Icon */}
+            <SearchBar />
 
             {/* Cart icon — badge pops on count change via React key */}
             <Link href="/cart" className="relative p-2 text-zinc-700 hover:text-amber-800 transition-colors" aria-label="Open cart">
