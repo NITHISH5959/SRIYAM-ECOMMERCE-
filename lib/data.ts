@@ -340,40 +340,88 @@ export async function getVariantsByIds(variantIds: string[]): Promise<ProductVar
 
 /**
  * Decrement stock for variant items (Frames).
- * Mirrors deductStock but targets product_variants table.
+ * Mirrors deductStock but targets product_variants table (and syncs parent product stock).
  */
 export async function deductVariantStock(
-  items: Array<{ variant_id: string; quantity: number; name: string }>
+  items: Array<{ variant_id: string; quantity: number; name: string; product_id?: string }>
 ): Promise<string | null> {
   if (isSupabaseConfigured()) {
     try {
-      const supabase = createClient();
-      const ids = items.map(i => i.variant_id);
-      const { data: liveVariants, error } = await supabase
-        .from('product_variants')
-        .select('id, stock')
-        .in('id', ids);
+      const supabase = createAdminClient() || createClient();
+      const ids = items.map(i => i.variant_id).filter(Boolean);
 
-      if (!error && liveVariants) {
-        for (const item of items) {
-          const lv = liveVariants.find(v => v.id === item.variant_id);
-          if (!lv) return `"${item.name}" could not be found.`;
-          if (lv.stock < item.quantity) {
-            return `"${item.name}" only has ${lv.stock} unit(s) left in stock.`;
+      if (ids.length > 0) {
+        const { data: liveVariants, error } = await supabase
+          .from('product_variants')
+          .select('id, product_id, stock')
+          .in('id', ids);
+
+        if (!error && liveVariants && liveVariants.length > 0) {
+          // Pre-check stock for all items
+          for (const item of items) {
+            const lv = liveVariants.find(v => v.id === item.variant_id);
+            if (!lv) continue;
+            if (lv.stock < item.quantity) {
+              return `"${item.name}" only has ${lv.stock} unit(s) left in stock.`;
+            }
           }
-        }
-        for (const item of items) {
-          await supabase.rpc('decrement_variant_stock', { p_variant_id: item.variant_id, qty: item.quantity });
-        }
-        // Sync memory
-        for (const item of items) {
-          const lv = liveVariants.find(v => v.id === item.variant_id);
-          const idx = memoryVariants.findIndex(v => v.id === item.variant_id);
-          if (idx !== -1 && lv) {
-            memoryVariants[idx] = { ...memoryVariants[idx], stock: Math.max(0, lv.stock - item.quantity) };
+
+          // Deduct stock in database
+          for (const item of items) {
+            const lv = liveVariants.find(v => v.id === item.variant_id);
+            if (!lv) continue;
+
+            const newVariantStock = Math.max(0, lv.stock - item.quantity);
+
+            // 1. Attempt RPC, fallback to direct update
+            const rpcRes = await supabase.rpc('decrement_variant_stock', {
+              p_variant_id: item.variant_id,
+              qty: item.quantity,
+            });
+
+            if (rpcRes.error) {
+              await supabase
+                .from('product_variants')
+                .update({ stock: newVariantStock })
+                .eq('id', item.variant_id);
+            }
+
+            // 2. Also decrement parent product stock if available
+            const parentProductId = item.product_id || lv.product_id;
+            if (parentProductId) {
+              const { data: parentProduct } = await supabase
+                .from('products')
+                .select('id, stock')
+                .eq('id', parentProductId)
+                .single();
+
+              if (parentProduct && typeof parentProduct.stock === 'number') {
+                const newParentStock = Math.max(0, parentProduct.stock - item.quantity);
+                await supabase
+                  .from('products')
+                  .update({ stock: newParentStock })
+                  .eq('id', parentProductId);
+              }
+            }
           }
+
+          // Sync memory store
+          for (const item of items) {
+            const lv = liveVariants.find(v => v.id === item.variant_id);
+            const idx = memoryVariants.findIndex(v => v.id === item.variant_id);
+            if (idx !== -1 && lv) {
+              memoryVariants[idx] = { ...memoryVariants[idx], stock: Math.max(0, lv.stock - item.quantity) };
+            }
+            const parentProductId = item.product_id || lv?.product_id;
+            if (parentProductId) {
+              const pIdx = memoryProducts.findIndex(p => p.id === parentProductId);
+              if (pIdx !== -1) {
+                memoryProducts[pIdx] = { ...memoryProducts[pIdx], stock: Math.max(0, memoryProducts[pIdx].stock - item.quantity) };
+              }
+            }
+          }
+          return null;
         }
-        return null;
       }
     } catch (err) {
       console.warn('[deductVariantStock] Live check failed, falling back to memory store:', err);
@@ -392,6 +440,12 @@ export async function deductVariantStock(
     if (idx !== -1) {
       memoryVariants[idx] = { ...memoryVariants[idx], stock: Math.max(0, memoryVariants[idx].stock - item.quantity) };
     }
+    if (item.product_id) {
+      const pIdx = memoryProducts.findIndex(p => p.id === item.product_id);
+      if (pIdx !== -1) {
+        memoryProducts[pIdx] = { ...memoryProducts[pIdx], stock: Math.max(0, memoryProducts[pIdx].stock - item.quantity) };
+      }
+    }
   }
   return null;
 }
@@ -406,36 +460,55 @@ export async function deductStock(items: Array<{ product_id: string; quantity: n
   if (isSupabaseConfigured()) {
     // Fetch current live stock from Supabase for authoritative check
     try {
-      const supabase = createClient();
-      const ids = items.map(i => i.product_id);
-      const { data: liveProducts, error } = await supabase
-        .from('products')
-        .select('id, stock, name')
-        .in('id', ids);
+      const supabase = createAdminClient() || createClient();
+      const ids = items.map(i => i.product_id).filter(Boolean);
 
-      if (!error && liveProducts) {
-        for (const item of items) {
-          const liveProduct = liveProducts.find(p => p.id === item.product_id);
-          if (!liveProduct) {
-            return `"${item.name}" could not be found.`;
+      if (ids.length > 0) {
+        const { data: liveProducts, error } = await supabase
+          .from('products')
+          .select('id, stock, name')
+          .in('id', ids);
+
+        if (!error && liveProducts && liveProducts.length > 0) {
+          for (const item of items) {
+            const liveProduct = liveProducts.find(p => p.id === item.product_id);
+            if (!liveProduct) {
+              return `"${item.name}" could not be found.`;
+            }
+            if (liveProduct.stock < item.quantity) {
+              return `"${item.name}" only has ${liveProduct.stock} unit(s) left in stock.`;
+            }
           }
-          if (liveProduct.stock < item.quantity) {
-            return `"${item.name}" only has ${liveProduct.stock} unit(s) left in stock.`;
+
+          // All checks passed — deduct via RPC or direct update
+          for (const item of items) {
+            const liveProduct = liveProducts.find(p => p.id === item.product_id);
+            const currentStock = liveProduct ? liveProduct.stock : 0;
+            const newStock = Math.max(0, currentStock - item.quantity);
+
+            const rpcRes = await supabase.rpc('decrement_stock', {
+              product_id: item.product_id,
+              qty: item.quantity,
+            });
+
+            if (rpcRes.error) {
+              await supabase
+                .from('products')
+                .update({ stock: newStock })
+                .eq('id', item.product_id);
+            }
           }
-        }
-        // All checks passed — deduct via RPC
-        for (const item of items) {
-          await supabase.rpc('decrement_stock', { product_id: item.product_id, qty: item.quantity });
-        }
-        // Sync memory store
-        for (const item of items) {
-          const idx = memoryProducts.findIndex(p => p.id === item.product_id);
-          const live = liveProducts.find(p => p.id === item.product_id);
-          if (idx !== -1 && live) {
-            memoryProducts[idx] = { ...memoryProducts[idx], stock: Math.max(0, live.stock - item.quantity) };
+
+          // Sync memory store
+          for (const item of items) {
+            const idx = memoryProducts.findIndex(p => p.id === item.product_id);
+            const live = liveProducts.find(p => p.id === item.product_id);
+            if (idx !== -1 && live) {
+              memoryProducts[idx] = { ...memoryProducts[idx], stock: Math.max(0, live.stock - item.quantity) };
+            }
           }
+          return null;
         }
-        return null;
       }
     } catch (err) {
       console.warn('[deductStock] Live stock check failed, falling back to memory store:', err);

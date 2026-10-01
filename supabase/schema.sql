@@ -176,3 +176,70 @@ create trigger trigger_set_order_number
   execute function public.set_order_number();
 
 create unique index if not exists orders_order_number_idx on public.orders(order_number);
+
+-- =============================================
+-- MIGRATION: Guest Account Auto-Creation & Linking
+-- Run this in Supabase SQL Editor:
+-- =============================================
+alter table public.profiles add column if not exists email text;
+alter table public.addresses add column if not exists email text;
+alter table public.orders add column if not exists contact_email text;
+
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, full_name, phone, email, is_admin)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name', ''),
+    coalesce(new.raw_user_meta_data->>'phone', ''),
+    new.email,
+    false
+  )
+  on conflict (id) do update set
+    full_name = coalesce(excluded.full_name, public.profiles.full_name),
+    phone = coalesce(excluded.phone, public.profiles.phone),
+    email = coalesce(excluded.email, public.profiles.email);
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- =============================================
+-- MIGRATION: Atomic Stock Reduction Functions
+-- Run this in Supabase SQL Editor:
+-- =============================================
+create or replace function public.decrement_stock(product_id uuid, qty int)
+returns void as $$
+begin
+  update public.products
+  set stock = greatest(0, stock - qty)
+  where id = product_id;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.decrement_stock(product_id text, qty int)
+returns void as $$
+begin
+  update public.products
+  set stock = greatest(0, stock - qty)
+  where id = product_id::uuid;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.decrement_variant_stock(p_variant_id uuid, qty int)
+returns void as $$
+begin
+  update public.product_variants
+  set stock = greatest(0, stock - qty)
+  where id = p_variant_id;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.decrement_variant_stock(p_variant_id text, qty int)
+returns void as $$
+begin
+  update public.product_variants
+  set stock = greatest(0, stock - qty)
+  where id = p_variant_id::uuid;
+end;
+$$ language plpgsql security definer;

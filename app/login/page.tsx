@@ -140,7 +140,7 @@ function LoginContent() {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full py-3.5 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 transition-colors shadow-md flex items-center justify-center gap-2"
+          className="w-full py-3.5 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 disabled:opacity-50 transition-colors shadow-md flex items-center justify-center gap-2"
         >
           <span>{isLoading ? 'Signing in...' : 'Sign In'}</span>
           <ArrowRight className="w-4 h-4" />

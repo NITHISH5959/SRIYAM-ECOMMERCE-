@@ -183,6 +183,7 @@ export async function POST(request: Request) {
       stockError = await deductVariantStock(
         variantItems.map((i: any) => ({
           variant_id: i.variant_id,
+          product_id: i.product_id,
           quantity: i.quantity,
           name: i.size ? `${i.name} (${i.size})` : i.name,
         }))

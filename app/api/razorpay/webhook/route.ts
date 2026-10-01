@@ -242,7 +242,12 @@ async function createOrderFromNotes(
 
   if (variantItems.length > 0) {
     const err = await deductVariantStock(
-      variantItems.map((i) => ({ variant_id: i.variant_id, quantity: i.quantity, name: i.name }))
+      variantItems.map((i) => ({
+        variant_id: i.variant_id,
+        product_id: i.product_id,
+        quantity: i.quantity,
+        name: i.name,
+      }))
     );
     if (err) {
       console.error('[Webhook] Fallback — variant stock deduction failed.', { razorpayOrderId, err });
