@@ -5,7 +5,8 @@ import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { STORE_CONFIG } from '@/lib/config';
 
-export const revalidate = 3600; // Re-validate product pages at most once per hour
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 interface ProductPageProps {
   params: {

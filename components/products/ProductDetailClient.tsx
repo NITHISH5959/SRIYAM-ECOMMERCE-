@@ -76,10 +76,22 @@ export default function ProductDetailClient({
     ? (selectedVariant ? cart.some(i => i.product.id === product.id && i.size === selectedVariant.size) : false)
     : cart.some(i => i.product.id === product.id);
 
+  // Stock calculations
+  const allVariantsOutOfStock = isFrame && variants.length > 0 && variants.every((v) => (v.stock ?? 0) <= 0);
+  const isDirectProductOutOfStock = !isFrame && (product.stock ?? 0) <= 0;
+  const isSelectedVariantOutOfStock = isFrame && selectedVariant && (selectedVariant.stock ?? 0) <= 0;
+  const isCompletelyOutOfStock = allVariantsOutOfStock || isDirectProductOutOfStock;
+
+  const currentAvailableStock = isFrame
+    ? (selectedVariant ? Math.max(0, selectedVariant.stock ?? 0) : 0)
+    : Math.max(0, product.stock ?? 0);
+
   // Add-to-cart button disabled state
   const isAddDisabled =
+    isCompletelyOutOfStock ||
     (isFrame && !selectedVariant) ||
-    (isFrame && selectedVariant ? selectedVariant.stock <= 0 : !isFrame && product.stock <= 0);
+    (isFrame && isSelectedVariantOutOfStock) ||
+    currentAvailableStock <= 0;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-16">
@@ -97,10 +109,17 @@ export default function ProductDetailClient({
         {/* Left Column: Image Gallery */}
         <div className="lg:col-span-7 space-y-1">
           {/* Discount badge sits above the slider */}
-          {discountPercentage > 0 && (
+          {discountPercentage > 0 && !isCompletelyOutOfStock && (
             <div className="mb-2">
               <span className="inline-block bg-amber-700 text-white text-xs font-bold px-3 py-1 rounded-md uppercase tracking-wider shadow-sm">
                 {discountPercentage}% OFF
+              </span>
+            </div>
+          )}
+          {isCompletelyOutOfStock && (
+            <div className="mb-2">
+              <span className="inline-block bg-zinc-800 text-zinc-100 text-xs font-bold px-3 py-1 rounded-md uppercase tracking-wider shadow-sm">
+                Out of Stock
               </span>
             </div>
           )}
@@ -133,7 +152,7 @@ export default function ProductDetailClient({
               {isFrame && !selectedVariant ? (
                 <span className="text-2xl font-extrabold text-zinc-900">
                   <span className="text-base font-normal text-zinc-500 mr-1">From</span>
-                  {STORE_CONFIG.defaultPricing.currency}{product.price.toLocaleString()}
+                  {STORE_CONFIG.defaultPricing.currency}{price.toLocaleString()}
                 </span>
               ) : (
                 <>
@@ -171,13 +190,18 @@ export default function ProductDetailClient({
                 <div className="flex gap-3">
                   {variants.map((v) => {
                     const isSelected = selectedVariant?.id === v.id;
-                    const isOos = v.stock <= 0;
+                    const isOos = (v.stock ?? 0) <= 0;
                     return (
                       <button
                         key={v.id}
                         type="button"
                         disabled={isOos}
-                        onClick={() => setSelectedVariant(v)}
+                        onClick={() => {
+                          setSelectedVariant(v);
+                          if (v.stock > 0 && quantity > v.stock) {
+                            setQuantity(v.stock);
+                          }
+                        }}
                         className={`relative px-5 py-3 rounded-xl border-2 text-sm font-bold transition-all ${
                           isSelected
                             ? 'border-amber-700 bg-amber-50 text-amber-900 shadow-sm'
@@ -199,9 +223,14 @@ export default function ProductDetailClient({
                     );
                   })}
                 </div>
-                {!selectedVariant && (
+                {!selectedVariant && !allVariantsOutOfStock && (
                   <p className="text-[11px] text-amber-700 font-medium">
                     ↑ Please select a size to add to cart
+                  </p>
+                )}
+                {allVariantsOutOfStock && (
+                  <p className="text-[11px] text-red-600 font-medium">
+                    All sizes are currently out of stock.
                   </p>
                 )}
               </div>
@@ -211,27 +240,39 @@ export default function ProductDetailClient({
             <div className="flex items-center gap-2 pt-1">
               {selectedVariant ? (
                 selectedVariant.stock > 0 ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
-                      In Stock ({selectedVariant.stock} units available)
+                  selectedVariant.stock <= 5 ? (
+                    <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
+                      ⚠️ Only {selectedVariant.stock} left in stock — order soon!
                     </span>
-                  </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
+                        In Stock ({selectedVariant.stock} units available)
+                      </span>
+                    </>
+                  )
                 ) : (
-                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded">
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2.5 py-1 rounded-md border border-red-200">
                     Out of Stock — {selectedVariant.size}
                   </span>
                 )
               ) : !isFrame ? (
                 product.stock > 0 ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
-                      In Stock ({product.stock} units available)
+                  product.stock <= 5 ? (
+                    <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
+                      ⚠️ Only {product.stock} left in stock — order soon!
                     </span>
-                  </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
+                        In Stock ({product.stock} units available)
+                      </span>
+                    </>
+                  )
                 ) : (
-                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded">
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2.5 py-1 rounded-md border border-red-200">
                     Out of Stock
                   </span>
                 )
@@ -248,32 +289,42 @@ export default function ProductDetailClient({
 
             {/* Quantity Selector & Add to Cart */}
             <div className="pt-6 space-y-4">
-              <div className="flex items-center gap-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-zinc-700">
-                  Quantity:
-                </span>
-                <div className="flex items-center border border-zinc-300 rounded-lg bg-zinc-50">
-                  <button
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="p-2.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-l-lg"
-                  >
-                    <Minus className="w-4 h-4" />
-                  </button>
-                  <span className="px-4 text-sm font-bold text-zinc-900">{quantity}</span>
-                  <button
-                    onClick={() => {
-                      const maxQty = Math.min(5, stockForDisplay);
-                      setQuantity(Math.min(quantity + 1, maxQty > 0 ? maxQty : 5));
-                    }}
-                    disabled={quantity >= Math.min(5, stockForDisplay > 0 ? stockForDisplay : 5)}
-                    className="p-2.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-r-lg disabled:opacity-40"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
+              {!isCompletelyOutOfStock && (!isFrame || (selectedVariant && selectedVariant.stock > 0)) && (
+                <div className="flex items-center gap-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-700">
+                    Quantity:
+                  </span>
+                  <div className="flex items-center border border-zinc-300 rounded-lg bg-zinc-50">
+                    <button
+                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                      disabled={quantity <= 1}
+                      className="p-2.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-l-lg disabled:opacity-40"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="px-4 text-sm font-bold text-zinc-900">{quantity}</span>
+                    <button
+                      onClick={() => {
+                        const maxQty = Math.max(1, currentAvailableStock);
+                        setQuantity(Math.min(quantity + 1, maxQty));
+                      }}
+                      disabled={quantity >= currentAvailableStock}
+                      className="p-2.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-r-lg disabled:opacity-40"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {isInCart ? (
+              {isCompletelyOutOfStock || isSelectedVariantOutOfStock ? (
+                <button
+                  disabled
+                  className="w-full py-4 font-bold text-xs uppercase tracking-widest rounded-xl shadow-sm flex items-center justify-center gap-2 select-none bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed"
+                >
+                  <span>Out of Stock</span>
+                </button>
+              ) : isInCart ? (
                 <Link
                   href="/cart"
                   className="w-full py-4 font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 select-none bg-amber-800 text-white hover:bg-amber-900"

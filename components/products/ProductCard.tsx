@@ -29,16 +29,25 @@ export default function ProductCard({ product }: ProductCardProps) {
       ? Math.round(((compareAtPrice - price) / compareAtPrice) * 100)
       : 0;
 
+  const variants = product.variants || [];
+  const isOutOfStock = isFrame
+    ? (variants.length > 0 ? variants.every((v) => (v.stock ?? 0) <= 0) : (product.stock ?? 0) <= 0)
+    : (product.stock ?? 0) <= 0;
+
   const hasImages = product.images && product.images.length > 0 && product.images[0].trim() !== '';
 
   return (
     <div className="group relative bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-zinc-300 transition-all duration-300 flex flex-col justify-between">
-      {/* Discount Badge */}
-      {discountPercentage > 0 && (
+      {/* Badges: Out of Stock takes precedence, then Discount */}
+      {isOutOfStock ? (
+        <div className="absolute top-3 left-3 z-10 bg-zinc-800 text-zinc-200 text-[10px] font-bold px-2 py-0.5 rounded tracking-wide uppercase shadow-sm">
+          Out of Stock
+        </div>
+      ) : discountPercentage > 0 ? (
         <div className="absolute top-3 left-3 z-10 bg-amber-700 text-white text-[10px] font-bold px-2 py-0.5 rounded tracking-wide uppercase shadow-sm">
           {discountPercentage}% OFF
         </div>
-      )}
+      ) : null}
 
       {/* Category Tag */}
       {product.category?.name && (
@@ -55,7 +64,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             alt={product.name}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
-            className="object-cover group-hover:scale-105 transition-transform duration-500"
+            className={`object-cover group-hover:scale-105 transition-transform duration-500 ${isOutOfStock ? 'grayscale opacity-75' : ''}`}
             unoptimized={product.images[0].startsWith('blob:') || product.images[0].startsWith('data:')}
           />
         ) : (
@@ -105,7 +114,14 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
           </div>
 
-          {isFrame ? (
+          {isOutOfStock ? (
+            <button
+              disabled
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 text-zinc-400 rounded-lg text-xs font-semibold tracking-wide cursor-not-allowed border border-zinc-200"
+            >
+              <span>Out of Stock</span>
+            </button>
+          ) : isFrame ? (
             // Frames require size selection on the PDP before adding to cart
             <Link
               href={`/product/${product.slug}`}

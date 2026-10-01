@@ -139,6 +139,7 @@ export default function CheckoutPage() {
   const [payLoading, setPayLoading] = useState(false);
   const [payError, setPayError] = useState('');
   const [stockError, setStockError] = useState('');
+  const [hasStockIssue, setHasStockIssue] = useState(false);
   const [rzpLoaded, setRzpLoaded] = useState(false);
   const [rzpError, setRzpError] = useState(false);
   const [scriptRetryKey, setScriptRetryKey] = useState(0);
@@ -152,6 +153,39 @@ export default function CheckoutPage() {
       }
     });
   }, [scriptRetryKey]);
+
+  // Re-validate live database stock on page load and cart change
+  useEffect(() => {
+    if (cart.length === 0) return;
+
+    const payload = cart.map((item) => ({
+      product_id: item.product.id,
+      variant_id: item.variantId,
+      size: item.size,
+      quantity: item.quantity,
+      name: item.product.name,
+    }));
+
+    fetch('/api/stock/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: payload }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && !data.valid && Array.isArray(data.errors) && data.errors.length > 0) {
+          setHasStockIssue(true);
+          const firstErr = data.errors[0];
+          setStockError(firstErr.message || 'Some items in your cart are no longer available in the requested quantity.');
+        } else {
+          setHasStockIssue(false);
+          setStockError('');
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to validate stock on checkout page load', err);
+      });
+  }, [cart]);
 
   // Sync user profile & saved addresses if logged in
   useEffect(() => {
@@ -280,6 +314,11 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (hasStockIssue) {
+      setPayError('Please resolve out-of-stock items before paying.');
+      return;
+    }
+
     setPayLoading(true);
 
     try {
@@ -297,26 +336,7 @@ export default function CheckoutPage() {
       setRzpLoaded(true);
       setRzpError(false);
 
-      // 2. Client-side stock & active status check
-      const liveProducts = await getProducts();
-      const liveProductMap = new Map(liveProducts.map((p) => [p.id, p]));
-
-      for (const item of cart) {
-        const liveP = liveProductMap.get(item.product.id);
-        if (!liveP || liveP.is_active === false) {
-          setStockError(`"${item.product.name}" is currently unavailable. Please return to cart and remove it.`);
-          setPayLoading(false);
-          return;
-        }
-        if (item.product.stock < item.quantity) {
-          const sizeLabel = item.size ? ` (${item.size})` : '';
-          setStockError(`"${item.product.name}${sizeLabel}" only has ${item.product.stock} unit(s) available.`);
-          setPayLoading(false);
-          return;
-        }
-      }
-
-      // 3. Format shipping address and items payload
+      // 2. Format shipping address and items payload
       const cleanPhone = phone.replace(/\D/g, '');
       const cleanEmail = email.trim();
       const shippingAddress: Address = {
@@ -342,7 +362,7 @@ export default function CheckoutPage() {
         size: i.size,
       }));
 
-      // 4. Call server endpoint to create authoritative Razorpay order
+      // 3. Call server endpoint to strictly pre-validate stock and create authoritative Razorpay order
       const orderRes = await fetch('/api/razorpay/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -357,6 +377,14 @@ export default function CheckoutPage() {
       });
 
       const orderData = await orderRes.json().catch(() => null);
+
+      if (orderRes.status === 409 || orderData?.code === 'OUT_OF_STOCK') {
+        setHasStockIssue(true);
+        setStockError(orderData?.message || 'Some items in your cart are no longer available in the requested quantity.');
+        setPayError('Stock ran out for one or more items. Please edit your cart before paying.');
+        setPayLoading(false);
+        return;
+      }
 
       if (!orderData?.success) {
         setPayError(orderData?.message || 'Failed to initialize payment. Please try again.');
@@ -1047,7 +1075,7 @@ export default function CheckoutPage() {
               <button
                 type="button"
                 onClick={handleProceedPayment}
-                disabled={payLoading || !isFormValid}
+                disabled={payLoading || !isFormValid || hasStockIssue}
                 className="w-full py-4 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center gap-2"
               >
                 {payLoading ? (
@@ -1055,6 +1083,8 @@ export default function CheckoutPage() {
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Processing Order...</span>
                   </>
+                ) : hasStockIssue ? (
+                  <span>Resolve Stock Issues to Pay</span>
                 ) : (
                   <span>Continue</span>
                 )}

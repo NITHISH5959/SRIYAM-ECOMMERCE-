@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { createOrderLimiter, getClientIp } from '@/lib/rate-limit';
-import { getProducts, getVariantsByIds, validateCouponCode } from '@/lib/data';
+import { getProducts, getVariantsByIds, validateCouponCode, validateCartStock } from '@/lib/data';
 import { STORE_CONFIG } from '@/lib/config';
 import { calculateShippingFee, validateAddress } from '@/lib/shipping';
 import { Address } from '@/types';
@@ -12,6 +12,9 @@ import { Address } from '@/types';
  *
  * Security contract:
  *  - The client sends cart items + coupon + shipping_fee (NOT a price/total).
+ *  - Live database stock is strictly validated BEFORE creating a Razorpay order.
+ *  - If any item is out of stock or requested quantity exceeds available stock,
+ *    returns HTTP 409 (Conflict) and blocks payment.
  *  - This route fetches CURRENT prices from Supabase for every item/variant and
  *    recalculates the total entirely server-side.
  *  - The Razorpay order is created for the server-calculated total ONLY.
@@ -61,6 +64,22 @@ export async function POST(request: Request) {
     // ── Input validation ────────────────────────────────────────────────────
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ success: false, message: 'Cart is empty.' }, { status: 400 });
+    }
+
+    // ── 0. Strict Live Stock Pre-Validation ─────────────────────────────────
+    const stockValidation = await validateCartStock(items);
+    if (!stockValidation.valid) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'OUT_OF_STOCK',
+          message:
+            stockValidation.errors.map((e) => e.message).join('. ') ||
+            'Some items in your cart are no longer available in the requested quantity.',
+          errors: stockValidation.errors,
+        },
+        { status: 409 }
+      );
     }
 
     // ── 1. Fetch current prices from DB (prevents price spoofing) ──────────

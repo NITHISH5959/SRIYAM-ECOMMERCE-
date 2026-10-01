@@ -261,4 +261,53 @@ create index if not exists idx_categories_name_trgm on public.categories using g
 -- =============================================
 create index if not exists idx_orders_user_id on public.orders(user_id);
 create index if not exists idx_orders_contact_email on public.orders(lower(contact_email));
-create index if not exists idx_addresses_user_id on public.addresses(user_id);
+create index if not exists idx_addresses_user_id on public.addresses(user_id);
+
+-- =============================================
+-- MIGRATION: Atomic Conditional Stock Deduction Functions
+-- Run this in Supabase SQL Editor:
+-- =============================================
+
+-- 1. Atomic Product Stock Deduction (Posters / standard items)
+create or replace function public.deduct_product_stock_atomic(p_id uuid, p_qty int)
+returns boolean as $$
+declare
+  rows_updated int;
+begin
+  update public.products
+  set stock = stock - p_qty
+  where id = p_id and is_active = true and stock >= p_qty;
+  
+  get diagnostics rows_updated = row_count;
+  return rows_updated > 0;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.deduct_product_stock_atomic(p_id text, p_qty int)
+returns boolean as $$
+begin
+  return public.deduct_product_stock_atomic(p_id::uuid, p_qty);
+end;
+$$ language plpgsql security definer;
+
+-- 2. Atomic Variant Stock Deduction (Frames / sized items)
+create or replace function public.deduct_variant_stock_atomic(p_variant_id uuid, p_qty int)
+returns boolean as $$
+declare
+  rows_updated int;
+begin
+  update public.product_variants
+  set stock = stock - p_qty
+  where id = p_variant_id and is_active = true and stock >= p_qty;
+  
+  get diagnostics rows_updated = row_count;
+  return rows_updated > 0;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.deduct_variant_stock_atomic(p_variant_id text, p_qty int)
+returns boolean as $$
+begin
+  return public.deduct_variant_stock_atomic(p_variant_id::uuid, p_qty);
+end;
+$$ language plpgsql security definer;

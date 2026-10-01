@@ -11,7 +11,8 @@ import {
   validateCouponCode,
   incrementCouponUsageCount,
 } from '@/lib/data';
-import { sendOrderConfirmationEmail } from '@/lib/email';
+import Razorpay from 'razorpay';
+import { sendOrderConfirmationEmail, sendOrderRefundEmail } from '@/lib/email';
 
 /**
  * Razorpay Webhook Endpoint — POST /api/razorpay/webhook
@@ -239,9 +240,10 @@ async function createOrderFromNotes(
   // ── Deduct stock ──────────────────────────────────────────────────────
   const variantItems = verifiedItems.filter((i) => i.variant_id);
   const nonVariantItems = verifiedItems.filter((i) => !i.variant_id);
+  let stockError: string | null = null;
 
   if (variantItems.length > 0) {
-    const err = await deductVariantStock(
+    stockError = await deductVariantStock(
       variantItems.map((i) => ({
         variant_id: i.variant_id,
         product_id: i.product_id,
@@ -249,30 +251,46 @@ async function createOrderFromNotes(
         name: i.name,
       }))
     );
-    if (err) {
-      console.error('[Webhook] Fallback — variant stock deduction failed.', { razorpayOrderId, err });
-      return;
-    }
   }
 
-  if (nonVariantItems.length > 0) {
-    const err = await deductStock(
+  if (!stockError && nonVariantItems.length > 0) {
+    stockError = await deductStock(
       nonVariantItems.map((i) => ({ product_id: i.product_id, quantity: i.quantity, name: i.name }))
     );
-    if (err) {
-      console.error('[Webhook] Fallback — stock deduction failed.', { razorpayOrderId, err });
-      return;
+  }
+
+  const storedTotal = parseFloat(total || '0');
+  const contactEmail = (notes.contact_email || notes.cust_email || paymentEmail || '').trim();
+
+  if (stockError) {
+    console.error('[Webhook] Fallback — stock deduction failed. Auto-refunding.', { razorpayOrderId, stockError });
+    const key_id = process.env.RAZORPAY_KEY_ID || '';
+    const key_secret = process.env.RAZORPAY_KEY_SECRET || '';
+    if (key_id && key_secret && !key_id.includes('placeholder')) {
+      try {
+        const rzp = new Razorpay({ key_id, key_secret });
+        await rzp.payments.refund(razorpayPaymentId, {
+          amount: Math.round(storedTotal * 100),
+          speed: 'optimum',
+          notes: {
+            reason: 'Out of stock — automatic refund by Sriyam Store',
+          },
+        });
+        if (contactEmail) {
+          await sendOrderRefundEmail(razorpayOrderId, contactEmail, storedTotal, stockError);
+        }
+      } catch (refundErr: any) {
+        console.error('[Webhook] CRITICAL — Fallback auto-refund failed.', { razorpayOrderId, error: refundErr?.message });
+      }
     }
+    return;
   }
 
   // ── Create order ──────────────────────────────────────────────────────
-  const storedTotal = parseFloat(total || '0');
   const storedSubtotal = parseFloat(subtotal || '0');
   const storedDiscount = parseFloat(discount || '0');
   const storedShipping = parseFloat(shipping || '0');
   const couponCode = coupon || '';
-
-  const contactEmail = (notes.contact_email || notes.cust_email || paymentEmail || '').trim();
 
   const fallbackAddress = {
     id: notes.address_id || `addr_${Date.now()}`,

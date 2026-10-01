@@ -405,9 +405,366 @@ export async function getVariantsByIds(variantIds: string[]): Promise<ProductVar
   return memoryVariants.filter(v => variantIds.includes(v.id));
 }
 
+export interface CartStockValidationError {
+  product_id: string;
+  variant_id?: string;
+  size?: string;
+  name: string;
+  code: 'OUT_OF_STOCK' | 'INSUFFICIENT_STOCK' | 'INACTIVE' | 'PRODUCT_NOT_FOUND';
+  message: string;
+  available_stock: number;
+  requested_quantity: number;
+  available: number;
+  requested: number;
+  is_out_of_stock: boolean;
+}
+
+export interface CartStockValidationResult {
+  valid: boolean;
+  errors: CartStockValidationError[];
+  items: Array<{
+    product_id: string;
+    variant_id?: string;
+    name: string;
+    size?: string;
+    available_stock: number;
+    price: number;
+    is_active: boolean;
+  }>;
+}
+
+/**
+ * Validate live database stock for a list of cart items.
+ * Used before creating Razorpay orders, on checkout page load, and in cart drawers.
+ */
+export async function validateCartStock(
+  items: Array<{
+    product_id: string;
+    variant_id?: string;
+    quantity: number;
+    name?: string;
+    size?: string;
+  }>
+): Promise<CartStockValidationResult> {
+  if (!items || items.length === 0) {
+    return { valid: true, errors: [], items: [] };
+  }
+
+  const errors: CartStockValidationError[] = [];
+  const stockSummary: Array<{
+    product_id: string;
+    variant_id?: string;
+    name: string;
+    size?: string;
+    available_stock: number;
+    price: number;
+    is_active: boolean;
+  }> = [];
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createAdminClient() || createClient();
+
+      const productIds = Array.from(new Set(items.map((i) => i.product_id).filter(Boolean)));
+      const variantIds = Array.from(
+        new Set(items.map((i) => i.variant_id).filter(Boolean) as string[])
+      );
+
+      const [productsRes, variantsRes] = await Promise.all([
+        supabase
+          .from('products')
+          .select('id, name, price, stock, is_active')
+          .in('id', productIds),
+        variantIds.length > 0
+          ? supabase
+              .from('product_variants')
+              .select('id, product_id, size, price, stock, is_active')
+              .in('id', variantIds)
+          : Promise.resolve({ data: [] as any[], error: null }),
+      ]);
+
+      const liveProducts = productsRes.data || [];
+      const liveVariants = variantsRes.data || [];
+
+      for (const item of items) {
+        const dbProduct = liveProducts.find((p: any) => p.id === item.product_id);
+        const itemName = item.name || dbProduct?.name || 'Item';
+        const itemSize = item.size;
+        const displayLabel = itemSize ? `${itemName} (${itemSize})` : itemName;
+
+        if (!dbProduct) {
+          errors.push({
+            product_id: item.product_id,
+            variant_id: item.variant_id,
+            name: itemName,
+            size: itemSize,
+            code: 'PRODUCT_NOT_FOUND',
+            message: `"${displayLabel}" is no longer available.`,
+            available_stock: 0,
+            requested_quantity: item.quantity,
+            available: 0,
+            requested: item.quantity,
+            is_out_of_stock: true,
+          });
+          continue;
+        }
+
+        if (dbProduct.is_active === false) {
+          errors.push({
+            product_id: item.product_id,
+            variant_id: item.variant_id,
+            name: itemName,
+            size: itemSize,
+            code: 'INACTIVE',
+            message: `"${displayLabel}" is currently unavailable.`,
+            available_stock: 0,
+            requested_quantity: item.quantity,
+            available: 0,
+            requested: item.quantity,
+            is_out_of_stock: true,
+          });
+          stockSummary.push({
+            product_id: item.product_id,
+            variant_id: item.variant_id,
+            name: itemName,
+            size: itemSize,
+            available_stock: 0,
+            price: dbProduct.price || 0,
+            is_active: false,
+          });
+          continue;
+        }
+
+        if (item.variant_id) {
+          const dbVariant = liveVariants.find((v: any) => v.id === item.variant_id);
+          if (!dbVariant || dbVariant.is_active === false) {
+            errors.push({
+              product_id: item.product_id,
+              variant_id: item.variant_id,
+              name: itemName,
+              size: itemSize,
+              code: dbVariant ? 'INACTIVE' : 'PRODUCT_NOT_FOUND',
+              message: `Variant for "${displayLabel}" is not available.`,
+              available_stock: 0,
+              requested_quantity: item.quantity,
+              available: 0,
+              requested: item.quantity,
+              is_out_of_stock: true,
+            });
+            stockSummary.push({
+              product_id: item.product_id,
+              variant_id: item.variant_id,
+              name: itemName,
+              size: itemSize,
+              available_stock: 0,
+              price: dbVariant?.price || dbProduct.price,
+              is_active: false,
+            });
+            continue;
+          }
+
+          const available = Math.max(0, Number(dbVariant.stock) || 0);
+          stockSummary.push({
+            product_id: item.product_id,
+            variant_id: item.variant_id,
+            name: itemName,
+            size: dbVariant.size || itemSize,
+            available_stock: available,
+            price: Number(dbVariant.price) || dbProduct.price,
+            is_active: true,
+          });
+
+          if (available <= 0) {
+            errors.push({
+              product_id: item.product_id,
+              variant_id: item.variant_id,
+              name: itemName,
+              size: dbVariant.size || itemSize,
+              code: 'OUT_OF_STOCK',
+              message: `"${displayLabel}" is out of stock.`,
+              available_stock: 0,
+              requested_quantity: item.quantity,
+              available: 0,
+              requested: item.quantity,
+              is_out_of_stock: true,
+            });
+          } else if (available < item.quantity) {
+            errors.push({
+              product_id: item.product_id,
+              variant_id: item.variant_id,
+              name: itemName,
+              size: dbVariant.size || itemSize,
+              code: 'INSUFFICIENT_STOCK',
+              message: `"${displayLabel}" only has ${available} unit(s) left in stock.`,
+              available_stock: available,
+              requested_quantity: item.quantity,
+              available: available,
+              requested: item.quantity,
+              is_out_of_stock: false,
+            });
+          }
+        } else {
+          // Standard / Non-variant item
+          const available = Math.max(0, Number(dbProduct.stock) || 0);
+          stockSummary.push({
+            product_id: item.product_id,
+            name: itemName,
+            available_stock: available,
+            price: Number(dbProduct.price) || 0,
+            is_active: true,
+          });
+
+          if (available <= 0) {
+            errors.push({
+              product_id: item.product_id,
+              name: itemName,
+              code: 'OUT_OF_STOCK',
+              message: `"${displayLabel}" is out of stock.`,
+              available_stock: 0,
+              requested_quantity: item.quantity,
+              available: 0,
+              requested: item.quantity,
+              is_out_of_stock: true,
+            });
+          } else if (available < item.quantity) {
+            errors.push({
+              product_id: item.product_id,
+              name: itemName,
+              code: 'INSUFFICIENT_STOCK',
+              message: `"${displayLabel}" only has ${available} unit(s) left in stock.`,
+              available_stock: available,
+              requested_quantity: item.quantity,
+              available: available,
+              requested: item.quantity,
+              is_out_of_stock: false,
+            });
+          }
+        }
+      }
+
+      return {
+        valid: errors.length === 0,
+        errors,
+        items: stockSummary,
+      };
+    } catch (err) {
+      console.error('[validateCartStock error]', err);
+    }
+  }
+
+  // Fallback: memory store
+  for (const item of items) {
+    const memProduct = memoryProducts.find((p) => p.id === item.product_id);
+    const itemName = item.name || memProduct?.name || 'Item';
+    const displayLabel = item.size ? `${itemName} (${item.size})` : itemName;
+
+    if (!memProduct || memProduct.is_active === false) {
+      errors.push({
+        product_id: item.product_id,
+        variant_id: item.variant_id,
+        name: itemName,
+        size: item.size,
+        code: 'OUT_OF_STOCK',
+        message: `"${displayLabel}" is unavailable.`,
+        available_stock: 0,
+        requested_quantity: item.quantity,
+        requested: item.quantity,
+        available: 0,
+        is_out_of_stock: true,
+      });
+      continue;
+    }
+
+    if (item.variant_id) {
+      const memVariant = memoryVariants.find((v) => v.id === item.variant_id);
+      const available = memVariant && memVariant.is_active !== false ? Math.max(0, memVariant.stock) : 0;
+      stockSummary.push({
+        product_id: item.product_id,
+        variant_id: item.variant_id,
+        name: itemName,
+        size: memVariant?.size || item.size,
+        available_stock: available,
+        price: memVariant?.price || memProduct.price,
+        is_active: memVariant ? memVariant.is_active !== false : false,
+      });
+
+      if (available <= 0) {
+        errors.push({
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          name: itemName,
+          size: memVariant?.size || item.size,
+          code: 'OUT_OF_STOCK',
+          message: `"${displayLabel}" is out of stock.`,
+          available_stock: 0,
+          requested_quantity: item.quantity,
+          requested: item.quantity,
+          available: 0,
+          is_out_of_stock: true,
+        });
+      } else if (available < item.quantity) {
+        errors.push({
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          name: itemName,
+          size: memVariant?.size || item.size,
+          code: 'INSUFFICIENT_STOCK',
+          message: `"${displayLabel}" only has ${available} unit(s) left in stock.`,
+          available_stock: available,
+          requested_quantity: item.quantity,
+          requested: item.quantity,
+          available: available,
+          is_out_of_stock: false,
+        });
+      }
+    } else {
+      const available = Math.max(0, memProduct.stock);
+      stockSummary.push({
+        product_id: item.product_id,
+        name: itemName,
+        available_stock: available,
+        price: memProduct.price,
+        is_active: true,
+      });
+
+      if (available <= 0) {
+        errors.push({
+          product_id: item.product_id,
+          name: itemName,
+          code: 'OUT_OF_STOCK',
+          message: `"${displayLabel}" is out of stock.`,
+          available_stock: 0,
+          requested_quantity: item.quantity,
+          requested: item.quantity,
+          available: 0,
+          is_out_of_stock: true,
+        });
+      } else if (available < item.quantity) {
+        errors.push({
+          product_id: item.product_id,
+          name: itemName,
+          code: 'INSUFFICIENT_STOCK',
+          message: `"${displayLabel}" only has ${available} unit(s) left in stock.`,
+          available_stock: available,
+          requested_quantity: item.quantity,
+          requested: item.quantity,
+          available: available,
+          is_out_of_stock: false,
+        });
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    items: stockSummary,
+  };
+}
+
 /**
  * Decrement stock for variant items (Frames).
- * Mirrors deductStock but targets product_variants table (and syncs parent product stock).
+ * Performs atomic conditional deductions in Postgres (WHERE stock >= qty).
  */
 export async function deductVariantStock(
   items: Array<{ variant_id: string; quantity: number; name: string; product_id?: string }>
@@ -415,7 +772,7 @@ export async function deductVariantStock(
   if (isSupabaseConfigured()) {
     try {
       const supabase = createAdminClient() || createClient();
-      const ids = items.map(i => i.variant_id).filter(Boolean);
+      const ids = items.map((i) => i.variant_id).filter(Boolean);
 
       if (ids.length > 0) {
         const { data: liveVariants, error } = await supabase
@@ -424,36 +781,49 @@ export async function deductVariantStock(
           .in('id', ids);
 
         if (!error && liveVariants && liveVariants.length > 0) {
-          // Pre-check stock for all items
+          // 1. Authoritative pre-check
           for (const item of items) {
-            const lv = liveVariants.find(v => v.id === item.variant_id);
-            if (!lv) continue;
+            const lv = liveVariants.find((v) => v.id === item.variant_id);
+            if (!lv) return `"${item.name}" could not be found.`;
             if (lv.stock < item.quantity) {
               return `"${item.name}" only has ${lv.stock} unit(s) left in stock.`;
             }
           }
 
-          // Deduct stock in database
+          // 2. Perform atomic conditional deductions
           for (const item of items) {
-            const lv = liveVariants.find(v => v.id === item.variant_id);
+            const lv = liveVariants.find((v) => v.id === item.variant_id);
             if (!lv) continue;
 
-            const newVariantStock = Math.max(0, lv.stock - item.quantity);
+            // Try atomic RPC
+            const { data: atomicSuccess, error: rpcErr } = await supabase.rpc(
+              'deduct_variant_stock_atomic',
+              {
+                p_variant_id: item.variant_id,
+                p_qty: item.quantity,
+              }
+            );
 
-            // 1. Attempt RPC, fallback to direct update
-            const rpcRes = await supabase.rpc('decrement_variant_stock', {
-              p_variant_id: item.variant_id,
-              qty: item.quantity,
-            });
-
-            if (rpcRes.error) {
-              await supabase
+            if (!rpcErr && typeof atomicSuccess === 'boolean') {
+              if (!atomicSuccess) {
+                return `"${item.name}" ran out of stock during payment verification.`;
+              }
+            } else {
+              // Fallback if atomic RPC is not yet registered: atomic direct update
+              const newVariantStock = Math.max(0, lv.stock - item.quantity);
+              const { data: updatedRows, error: updErr } = await supabase
                 .from('product_variants')
                 .update({ stock: newVariantStock })
-                .eq('id', item.variant_id);
+                .eq('id', item.variant_id)
+                .gte('stock', item.quantity)
+                .select('id');
+
+              if (updErr || !updatedRows || updatedRows.length === 0) {
+                return `"${item.name}" ran out of stock during payment verification.`;
+              }
             }
 
-            // 2. Also decrement parent product stock if available
+            // Sync parent product stock if available
             const parentProductId = item.product_id || lv.product_id;
             if (parentProductId) {
               const { data: parentProduct } = await supabase
@@ -474,16 +844,22 @@ export async function deductVariantStock(
 
           // Sync memory store
           for (const item of items) {
-            const lv = liveVariants.find(v => v.id === item.variant_id);
-            const idx = memoryVariants.findIndex(v => v.id === item.variant_id);
+            const lv = liveVariants.find((v) => v.id === item.variant_id);
+            const idx = memoryVariants.findIndex((v) => v.id === item.variant_id);
             if (idx !== -1 && lv) {
-              memoryVariants[idx] = { ...memoryVariants[idx], stock: Math.max(0, lv.stock - item.quantity) };
+              memoryVariants[idx] = {
+                ...memoryVariants[idx],
+                stock: Math.max(0, lv.stock - item.quantity),
+              };
             }
             const parentProductId = item.product_id || lv?.product_id;
             if (parentProductId) {
-              const pIdx = memoryProducts.findIndex(p => p.id === parentProductId);
+              const pIdx = memoryProducts.findIndex((p) => p.id === parentProductId);
               if (pIdx !== -1) {
-                memoryProducts[pIdx] = { ...memoryProducts[pIdx], stock: Math.max(0, memoryProducts[pIdx].stock - item.quantity) };
+                memoryProducts[pIdx] = {
+                  ...memoryProducts[pIdx],
+                  stock: Math.max(0, memoryProducts[pIdx].stock - item.quantity),
+                };
               }
             }
           }
@@ -491,26 +867,32 @@ export async function deductVariantStock(
         }
       }
     } catch (err) {
-      console.warn('[deductVariantStock] Live check failed, falling back to memory store:', err);
+      console.warn('[deductVariantStock] Live deduction warning:', err);
     }
   }
 
   // Fallback: memory store
   for (const item of items) {
-    const v = memoryVariants.find(v => v.id === item.variant_id);
+    const v = memoryVariants.find((v) => v.id === item.variant_id);
     if (v && v.stock < item.quantity) {
       return `"${item.name}" only has ${v.stock} unit(s) left in stock.`;
     }
   }
   for (const item of items) {
-    const idx = memoryVariants.findIndex(v => v.id === item.variant_id);
+    const idx = memoryVariants.findIndex((v) => v.id === item.variant_id);
     if (idx !== -1) {
-      memoryVariants[idx] = { ...memoryVariants[idx], stock: Math.max(0, memoryVariants[idx].stock - item.quantity) };
+      memoryVariants[idx] = {
+        ...memoryVariants[idx],
+        stock: Math.max(0, memoryVariants[idx].stock - item.quantity),
+      };
     }
     if (item.product_id) {
-      const pIdx = memoryProducts.findIndex(p => p.id === item.product_id);
+      const pIdx = memoryProducts.findIndex((p) => p.id === item.product_id);
       if (pIdx !== -1) {
-        memoryProducts[pIdx] = { ...memoryProducts[pIdx], stock: Math.max(0, memoryProducts[pIdx].stock - item.quantity) };
+        memoryProducts[pIdx] = {
+          ...memoryProducts[pIdx],
+          stock: Math.max(0, memoryProducts[pIdx].stock - item.quantity),
+        };
       }
     }
   }
@@ -518,17 +900,16 @@ export async function deductVariantStock(
 }
 
 /**
- * Decrement stock for purchased items.
- * When Supabase is configured, fetches live stock values from the DB so the
- * pre-check is not based on a potentially-stale in-memory snapshot.
- * Returns an error string if any item is out of stock, or null on success.
+ * Decrement stock for purchased items (Posters / standard products).
+ * Performs atomic conditional deductions in Postgres (WHERE stock >= qty).
  */
-export async function deductStock(items: Array<{ product_id: string; quantity: number; name: string }>): Promise<string | null> {
+export async function deductStock(
+  items: Array<{ product_id: string; quantity: number; name: string }>
+): Promise<string | null> {
   if (isSupabaseConfigured()) {
-    // Fetch current live stock from Supabase for authoritative check
     try {
       const supabase = createAdminClient() || createClient();
-      const ids = items.map(i => i.product_id).filter(Boolean);
+      const ids = items.map((i) => i.product_id).filter(Boolean);
 
       if (ids.length > 0) {
         const { data: liveProducts, error } = await supabase
@@ -537,8 +918,9 @@ export async function deductStock(items: Array<{ product_id: string; quantity: n
           .in('id', ids);
 
         if (!error && liveProducts && liveProducts.length > 0) {
+          // 1. Authoritative pre-check
           for (const item of items) {
-            const liveProduct = liveProducts.find(p => p.id === item.product_id);
+            const liveProduct = liveProducts.find((p) => p.id === item.product_id);
             if (!liveProduct) {
               return `"${item.name}" could not be found.`;
             }
@@ -547,55 +929,74 @@ export async function deductStock(items: Array<{ product_id: string; quantity: n
             }
           }
 
-          // All checks passed — deduct via RPC or direct update
+          // 2. Perform atomic conditional deductions
           for (const item of items) {
-            const liveProduct = liveProducts.find(p => p.id === item.product_id);
-            const currentStock = liveProduct ? liveProduct.stock : 0;
-            const newStock = Math.max(0, currentStock - item.quantity);
+            const liveProduct = liveProducts.find((p) => p.id === item.product_id);
+            if (!liveProduct) continue;
 
-            const rpcRes = await supabase.rpc('decrement_stock', {
-              product_id: item.product_id,
-              qty: item.quantity,
-            });
+            const { data: atomicSuccess, error: rpcErr } = await supabase.rpc(
+              'deduct_product_stock_atomic',
+              {
+                p_id: item.product_id,
+                p_qty: item.quantity,
+              }
+            );
 
-            if (rpcRes.error) {
-              await supabase
+            if (!rpcErr && typeof atomicSuccess === 'boolean') {
+              if (!atomicSuccess) {
+                return `"${item.name}" ran out of stock during payment verification.`;
+              }
+            } else {
+              // Direct atomic fallback
+              const newStock = Math.max(0, liveProduct.stock - item.quantity);
+              const { data: updatedRows, error: updErr } = await supabase
                 .from('products')
                 .update({ stock: newStock })
-                .eq('id', item.product_id);
+                .eq('id', item.product_id)
+                .gte('stock', item.quantity)
+                .select('id');
+
+              if (updErr || !updatedRows || updatedRows.length === 0) {
+                return `"${item.name}" ran out of stock during payment verification.`;
+              }
             }
           }
 
           // Sync memory store
           for (const item of items) {
-            const idx = memoryProducts.findIndex(p => p.id === item.product_id);
-            const live = liveProducts.find(p => p.id === item.product_id);
+            const idx = memoryProducts.findIndex((p) => p.id === item.product_id);
+            const live = liveProducts.find((p) => p.id === item.product_id);
             if (idx !== -1 && live) {
-              memoryProducts[idx] = { ...memoryProducts[idx], stock: Math.max(0, live.stock - item.quantity) };
+              memoryProducts[idx] = {
+                ...memoryProducts[idx],
+                stock: Math.max(0, live.stock - item.quantity),
+              };
             }
           }
           return null;
         }
       }
     } catch (err) {
-      console.warn('[deductStock] Live stock check failed, falling back to memory store:', err);
+      console.warn('[deductStock] Live deduction warning:', err);
     }
   }
 
-  // Fallback: memory-store check (demo mode / Supabase not configured)
+  // Fallback: memory store
   for (const item of items) {
-    const product = memoryProducts.find(p => p.id === item.product_id);
+    const product = memoryProducts.find((p) => p.id === item.product_id);
     if (product) {
       if (product.stock < item.quantity) {
         return `"${item.name}" only has ${product.stock} unit(s) left in stock.`;
       }
     }
   }
-  // Deduct from memory store
   for (const item of items) {
-    const idx = memoryProducts.findIndex(p => p.id === item.product_id);
+    const idx = memoryProducts.findIndex((p) => p.id === item.product_id);
     if (idx !== -1) {
-      memoryProducts[idx] = { ...memoryProducts[idx], stock: Math.max(0, memoryProducts[idx].stock - item.quantity) };
+      memoryProducts[idx] = {
+        ...memoryProducts[idx],
+        stock: Math.max(0, memoryProducts[idx].stock - item.quantity),
+      };
     }
   }
   return null;
@@ -1030,3 +1431,4 @@ export async function updateOrderStatus(orderIdOrNumber: string, status: Order['
   if (idx !== -1) memoryOrders[idx] = { ...memoryOrders[idx], status };
   return true;
 }
+

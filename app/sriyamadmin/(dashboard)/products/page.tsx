@@ -236,13 +236,27 @@ export default function AdminProductsPage() {
 
                       {/* Stock */}
                       <td className="py-3 px-4">
-                        <span
-                          className={`font-semibold ${
-                            product.stock > 0 ? 'text-zinc-800' : 'text-red-600 font-bold'
-                          }`}
-                        >
-                          {product.stock} units
-                        </span>
+                        {product.stock <= 0 ? (
+                          <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                            Out of Stock (0)
+                          </span>
+                        ) : product.stock <= 5 ? (
+                          <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                            Low Stock ({product.stock})
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-semibold px-2 py-0.5 rounded">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            {product.stock} units
+                          </span>
+                        )}
+                        {product.variants && product.variants.length > 0 && (
+                          <p className="text-[10px] text-zinc-400 mt-0.5">
+                            {product.variants.length} variant{product.variants.length > 1 ? 's' : ''}
+                          </p>
+                        )}
                       </td>
 
                       {/* Featured Masterpiece */}

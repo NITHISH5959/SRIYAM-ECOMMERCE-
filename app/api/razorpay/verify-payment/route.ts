@@ -13,7 +13,7 @@ import {
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { verifyPaymentLimiter, getClientIp } from '@/lib/rate-limit';
 import { calculateShippingFee } from '@/lib/shipping';
-import { sendOrderConfirmationEmail } from '@/lib/email';
+import { sendOrderConfirmationEmail, sendOrderRefundEmail } from '@/lib/email';
 
 /**
  * POST /api/razorpay/verify-payment
@@ -224,6 +224,17 @@ export async function POST(request: Request) {
             amount: calculatedTotal,
             stockError,
           });
+
+          // Send refund notification email
+          const customerEmail = (orderData.contact_email || orderData.shipping_address?.email || '').trim();
+          if (customerEmail) {
+            await sendOrderRefundEmail(
+              razorpay_order_id,
+              customerEmail,
+              calculatedTotal,
+              stockError
+            );
+          }
         } catch (refundErr: any) {
           // Log fully for manual follow-up, but don't expose to client
           console.error('[verify-payment] CRITICAL — Auto-refund failed. Manual action required.', {

@@ -23,6 +23,16 @@ import {
   Loader2,
 } from 'lucide-react';
 
+interface StockErrorItem {
+  product_id: string;
+  variant_id?: string;
+  size?: string;
+  code: string;
+  message: string;
+  available_stock: number;
+  requested_quantity: number;
+}
+
 export default function CartPage() {
   const router = useRouter();
   const {
@@ -46,32 +56,50 @@ export default function CartPage() {
   const [inputCode, setInputCode] = useState(couponCode || '');
   const [isApplying, setIsApplying] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
-  const [unavailableKeys, setUnavailableKeys] = useState<Set<string>>(new Set());
+  const [stockErrors, setStockErrors] = useState<StockErrorItem[]>([]);
 
   // Dynamic shipping note
   const isFreeShipping = isFreeShippingCoupon;
   const totalAmount = Math.max(0, subtotal - discountAmount);
 
-  // Load "You May Also Like" products (4 items strictly active & excluding cart items)
-  // Also validate cart items against live active product status
+  // Load "You May Also Like" products and validate live cart stock
   useEffect(() => {
     getProducts().then((allProducts) => {
       const activeProducts = allProducts.filter((p) => p.is_active !== false);
-      const activeIdSet = new Set(activeProducts.map((p) => p.id));
-
-      const unavail = new Set<string>();
-      cart.forEach((item) => {
-        const key = `${item.product.id}__${item.size || ''}`;
-        if (!activeIdSet.has(item.product.id) || item.product.is_active === false) {
-          unavail.add(key);
-        }
-      });
-      setUnavailableKeys(unavail);
-
       const cartIds = new Set(cart.map((item) => item.product.id));
       const filtered = activeProducts.filter((p) => !cartIds.has(p.id)).slice(0, 4);
       setRecommendedProducts(filtered);
     });
+
+    if (cart.length === 0) {
+      setStockErrors([]);
+      return;
+    }
+
+    const payload = cart.map((item) => ({
+      product_id: item.product.id,
+      variant_id: item.variantId,
+      size: item.size,
+      quantity: item.quantity,
+      name: item.product.name,
+    }));
+
+    fetch('/api/stock/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: payload }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.errors)) {
+          setStockErrors(data.errors);
+        } else {
+          setStockErrors([]);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to validate stock on CartPage', err);
+      });
   }, [cart]);
 
   const handleApplyCouponSubmit = async (e: React.FormEvent) => {
@@ -81,9 +109,17 @@ export default function CartPage() {
     setIsApplying(false);
   };
 
+  const getLineError = (productId: string, size?: string) => {
+    return stockErrors.find(
+      (err) =>
+        err.product_id === productId &&
+        ((!err.size && !size) || err.size === size)
+    );
+  };
+
   const handleProceedToCheckout = () => {
-    if (unavailableKeys.size > 0) {
-      alert('Please remove unavailable products from your cart before proceeding to checkout.');
+    if (stockErrors.length > 0) {
+      alert('Please resolve stock issues before proceeding to checkout.');
       return;
     }
     router.push('/checkout');
@@ -137,27 +173,28 @@ export default function CartPage() {
         </h1>
       </div>
 
-      {/* Top Banner Warning for Unavailable Items */}
-      {unavailableKeys.size > 0 && (
+      {/* Top Banner Warning for Stock Issues */}
+      {stockErrors.length > 0 && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-red-800 shadow-sm">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
             <span>
-              <strong>Attention:</strong> {unavailableKeys.size} item(s) in your cart are no longer available or active. Please remove them before proceeding to checkout.
+              <strong>Stock Notice:</strong> {stockErrors.length} item(s) in your cart have stock restrictions or are no longer available. Please update your cart before proceeding.
             </span>
           </div>
           <button
             onClick={() => {
-              cart.forEach((item) => {
-                const key = `${item.product.id}__${item.size || ''}`;
-                if (unavailableKeys.has(key)) {
-                  removeFromCart(item.product.id, item.size);
+              stockErrors.forEach((err) => {
+                if (err.available_stock === 0 || err.code === 'INACTIVE' || err.code === 'PRODUCT_NOT_FOUND') {
+                  removeFromCart(err.product_id, err.size);
+                } else if (err.available_stock > 0) {
+                  updateQuantity(err.product_id, err.available_stock, err.size);
                 }
               });
             }}
             className="px-3 py-1.5 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors flex-shrink-0"
           >
-            Remove Unavailable Items
+            Auto-Fix All Quantities
           </button>
         </div>
       )}
@@ -167,98 +204,136 @@ export default function CartPage() {
         <div className="lg:col-span-8 space-y-6">
           <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden divide-y divide-zinc-100">
             {cart.map(({ product, quantity, size, variantId }) => {
-              const maxStock = product.stock > 0 ? Math.min(5, product.stock) : 0;
+              const lineErr = getLineError(product.id, size);
+              const isOutOfStock = lineErr && lineErr.available_stock === 0;
+              const isInsufficient = lineErr && lineErr.available_stock > 0 && quantity > lineErr.available_stock;
+              const isUnavailable = Boolean(lineErr);
+              const maxStock = lineErr ? lineErr.available_stock : (product.stock > 0 ? product.stock : 0);
               const hasImages = product.images && product.images.length > 0 && product.images[0].trim() !== '';
               const cartKey = `${product.id}__${size || ''}`;
-              const isUnavailable = unavailableKeys.has(cartKey) || product.is_active === false;
 
               return (
                 <div
                   key={cartKey}
-                  className={`p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 transition-colors ${
-                    isUnavailable ? 'bg-red-50/40 border-l-4 border-red-500' : 'hover:bg-zinc-50/50'
+                  className={`p-6 flex flex-col gap-4 transition-colors ${
+                    lineErr ? 'bg-red-50/40 border-l-4 border-red-500' : 'hover:bg-zinc-50/50'
                   }`}
                 >
-                  {/* Image & Title */}
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="w-20 h-24 bg-zinc-100 rounded-lg overflow-hidden flex-shrink-0 border border-zinc-200 flex items-center justify-center">
-                      {hasImages ? (
-                        <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <PlaceholderImage title={product.name} category={product.category?.name || ''} className="h-full" />
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      {isUnavailable ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-red-700 bg-red-100 px-2 py-0.5 rounded border border-red-200">
-                          <AlertCircle className="w-3 h-3" /> No Longer Available
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
-                          {product.category?.name || 'Spiritual'}
-                        </span>
-                      )}
-                      <Link
-                        href={`/product/${product.slug}`}
-                        className={`block font-semibold text-sm transition-colors ${
-                          isUnavailable ? 'text-zinc-500 line-through' : 'text-zinc-900 hover:text-amber-800'
-                        }`}
-                      >
-                        {product.name}
-                      </Link>
-                      {/* Size badge for Frame items */}
-                      {size && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200">
-                          Size: {size}
-                        </span>
-                      )}
-                      <p className="text-xs font-bold text-zinc-900">
-                        {STORE_CONFIG.defaultPricing.currency}{product.price.toLocaleString()}
-                        {product.compare_at_price > product.price && (
-                          <span className="text-[11px] text-zinc-400 line-through font-normal ml-2">
-                            {STORE_CONFIG.defaultPricing.currency}{product.compare_at_price.toLocaleString()}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+                    {/* Image & Title */}
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className="w-20 h-24 bg-zinc-100 rounded-lg overflow-hidden flex-shrink-0 border border-zinc-200 flex items-center justify-center">
+                        {hasImages ? (
+                          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <PlaceholderImage title={product.name} category={product.category?.name || ''} className="h-full" />
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        {lineErr ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-red-700 bg-red-100 px-2 py-0.5 rounded border border-red-200">
+                            <AlertCircle className="w-3 h-3" />
+                            {isOutOfStock
+                              ? 'Out of Stock'
+                              : isInsufficient
+                              ? `Only ${lineErr.available_stock} Left`
+                              : 'Unavailable'}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
+                            {product.category?.name || 'Spiritual'}
                           </span>
                         )}
-                      </p>
+                        <Link
+                          href={`/product/${product.slug}`}
+                          className={`block font-semibold text-sm transition-colors ${
+                            isOutOfStock ? 'text-zinc-500 line-through' : 'text-zinc-900 hover:text-amber-800'
+                          }`}
+                        >
+                          {product.name}
+                        </Link>
+                        {/* Size badge for Frame items */}
+                        {size && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200">
+                            Size: {size}
+                          </span>
+                        )}
+                        <p className="text-xs font-bold text-zinc-900">
+                          {STORE_CONFIG.defaultPricing.currency}{product.price.toLocaleString()}
+                          {product.compare_at_price > product.price && (
+                            <span className="text-[11px] text-zinc-400 line-through font-normal ml-2">
+                              {STORE_CONFIG.defaultPricing.currency}{product.compare_at_price.toLocaleString()}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Quantity Controls */}
+                    <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
+                      <div className="flex items-center border border-zinc-300 rounded-lg bg-zinc-50">
+                        <button
+                          onClick={() => updateQuantity(product.id, quantity - 1, size)}
+                          className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-l-lg"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="px-3 text-xs font-bold text-zinc-900">{quantity}</span>
+                        <button
+                          onClick={() => updateQuantity(product.id, quantity + 1, size)}
+                          disabled={Boolean(lineErr && quantity >= lineErr.available_stock)}
+                          className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-r-lg disabled:opacity-30"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Line Total */}
+                      <div className="text-right min-w-[80px]">
+                        <span className="text-sm font-extrabold text-zinc-900">
+                          {STORE_CONFIG.defaultPricing.currency}{(product.price * quantity).toLocaleString()}
+                        </span>
+                      </div>
+
+                      {/* Remove */}
+                      <button
+                        onClick={() => removeFromCart(product.id, size)}
+                        className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Remove item"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
 
-                  {/* Quantity Controls */}
-                  <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
-                    <div className="flex items-center border border-zinc-300 rounded-lg bg-zinc-50">
-                      <button
-                        onClick={() => updateQuantity(product.id, quantity - 1, size)}
-                        disabled={isUnavailable}
-                        className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-l-lg disabled:opacity-30"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="px-3 text-xs font-bold text-zinc-900">{quantity}</span>
-                      <button
-                        onClick={() => updateQuantity(product.id, quantity + 1, size)}
-                        disabled={isUnavailable || quantity >= maxStock}
-                        className="px-3 py-1.5 text-zinc-600 hover:bg-zinc-200 transition-colors rounded-r-lg disabled:opacity-30"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+                  {/* Stock Quick Action Banner for Line */}
+                  {lineErr && (
+                    <div className="pt-2 border-t border-red-200/80 flex items-center justify-between gap-2 text-xs">
+                      <div className="text-red-700 font-medium">
+                        {isOutOfStock
+                          ? 'This item is out of stock. Please remove it to proceed.'
+                          : isInsufficient
+                          ? `Only ${lineErr.available_stock} available in stock (you selected ${quantity}).`
+                          : lineErr.message}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {isInsufficient && lineErr.available_stock > 0 && (
+                          <button
+                            onClick={() => updateQuantity(product.id, lineErr.available_stock, size)}
+                            className="px-3 py-1 bg-amber-100 text-amber-900 font-bold rounded-lg hover:bg-amber-200 transition-colors text-xs"
+                          >
+                            Reduce to {lineErr.available_stock}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => removeFromCart(product.id, size)}
+                          className="px-2 py-1 text-red-700 hover:text-red-900 underline font-semibold text-xs"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
-
-                    {/* Line Total */}
-                    <div className="text-right min-w-[80px]">
-                      <span className="text-sm font-extrabold text-zinc-900">
-                        {STORE_CONFIG.defaultPricing.currency}{(product.price * quantity).toLocaleString()}
-                      </span>
-                    </div>
-
-                    {/* Remove */}
-                    <button
-                      onClick={() => removeFromCart(product.id, size)}
-                      className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Remove item"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -386,14 +461,14 @@ export default function CartPage() {
             {/* Checkout Action Button */}
             <button
               onClick={handleProceedToCheckout}
-              disabled={unavailableKeys.size > 0}
+              disabled={stockErrors.length > 0}
               className={`w-full py-4 font-bold text-xs uppercase tracking-widest rounded-xl transition-colors shadow-lg flex items-center justify-center gap-2 group ${
-                unavailableKeys.size > 0
+                stockErrors.length > 0
                   ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed shadow-none'
                   : 'bg-zinc-900 text-white hover:bg-amber-800'
               }`}
             >
-              <span>{unavailableKeys.size > 0 ? 'Remove Unavailable Items' : 'Proceed to Checkout'}</span>
+              <span>{stockErrors.length > 0 ? 'Fix Stock Issues to Checkout' : 'Proceed to Checkout'}</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
 

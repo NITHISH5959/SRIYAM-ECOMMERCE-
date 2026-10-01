@@ -233,3 +233,164 @@ export async function sendOrderConfirmationEmail(order: Order): Promise<{ succes
     return { success: false, error: err?.message };
   }
 }
+
+/**
+ * Generates an HTML order refund notification email for Sriyam Store customers.
+ */
+export function generateOrderRefundHtml(
+  orderId: string,
+  customerEmail: string,
+  refundAmount: number,
+  reason: string,
+  storeUrl = 'https://sriyam.in'
+): string {
+  const whatsappUrl = `https://wa.me/${STORE_CONFIG.whatsappNumber.replace(/\+/g, '')}?text=${encodeURIComponent(
+    `Hi Sriyam Store, I have a query about my refunded order ${orderId}.`
+  )}`;
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Refund Notice - ${orderId}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #fafafa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #18181b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #fafafa; padding: 30px 15px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 600px; background-color: #ffffff; border: 1px solid #e4e4e7; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <!-- Header -->
+          <tr>
+            <td style="background-color: #18181b; padding: 28px 24px; text-align: center;">
+              <h1 style="margin: 0; font-family: Georgia, serif; font-size: 24px; color: #ffffff; letter-spacing: 0.5px;">
+                ${STORE_CONFIG.name}
+              </h1>
+              <p style="margin: 6px 0 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #f59e0b;">
+                Bringing Divinity to Every Home
+              </p>
+            </td>
+          </tr>
+
+          <!-- Banner -->
+          <tr>
+            <td style="padding: 32px 24px 20px 24px; text-align: center;">
+              <div style="display: inline-block; background-color: #fef2f2; color: #b91c1c; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 6px 14px; border-radius: 9999px; border: 1px solid #fecaca; margin-bottom: 12px;">
+                Refund Issued
+              </div>
+              <h2 style="margin: 0 0 8px 0; font-family: Georgia, serif; font-size: 22px; color: #18181b;">
+                Full Refund Initiated
+              </h2>
+              <p style="margin: 0; font-size: 13px; color: #71717a; line-height: 1.5;">
+                We apologize for the inconvenience. One or more items in your order went out of stock during checkout. A full refund has been automatically credited back to your original payment method.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Refund Details Box -->
+          <tr>
+            <td style="padding: 0 24px 24px 24px;">
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; text-align: center;">
+                <span style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Refund Amount</span>
+                <div style="font-size: 24px; font-family: monospace; font-weight: 700; color: #0f172a; margin-top: 4px;">
+                  ₹${refundAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </div>
+                <div style="font-size: 12px; color: #71717a; margin-top: 6px;">
+                  Order Reference: <strong>${orderId}</strong>
+                </div>
+                ${reason ? `<div style="font-size: 11px; color: #b91c1c; margin-top: 6px;">Reason: ${reason}</div>` : ''}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Refund Timeline Note -->
+          <tr>
+            <td style="padding: 0 24px 24px 24px; font-size: 12px; color: #52525b; line-height: 1.6;">
+              <p style="margin: 0;">
+                <strong>Timeline:</strong> Depending on your bank or UPI provider, the funds typically reflect in your account within <strong>5–7 business days</strong>.
+              </p>
+            </td>
+          </tr>
+
+          <!-- WhatsApp CTA -->
+          <tr>
+            <td style="padding: 0 24px 30px 24px; text-align: center;">
+              <div>
+                <a href="${whatsappUrl}" style="display: block; background-color: #059669; color: #ffffff; text-decoration: none; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 12px 24px; border-radius: 10px;">
+                  Chat with Us on WhatsApp
+                </a>
+              </div>
+              <p style="margin: 16px 0 0 0; font-size: 11px; color: #a1a1aa;">
+                Have questions? Reach us anytime at <a href="mailto:${STORE_CONFIG.contact.email}" style="color: #92400e;">${STORE_CONFIG.contact.email}</a> or +91 97893 54378.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f4f4f5; padding: 20px 24px; text-align: center; font-size: 11px; color: #71717a; border-top: 1px solid #e4e4e7;">
+              <p style="margin: 0;">© ${new Date().getFullYear()} ${STORE_CONFIG.name}. All rights reserved.</p>
+              <p style="margin: 4px 0 0 0; color: #b45309; font-weight: 500;">நற்றுணையாவது நமச்சிவாயவே</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+}
+
+/**
+ * Sends order refund notification email to the customer.
+ */
+export async function sendOrderRefundEmail(
+  orderId: string,
+  customerEmail: string,
+  refundAmount: number,
+  reason: string
+): Promise<{ success: boolean; error?: string }> {
+  const cleanEmail = customerEmail.trim();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    console.info(`[Email Service] No valid email provided for refund on order ${orderId}. Skipping.`);
+    return { success: true };
+  }
+
+  const htmlContent = generateOrderRefundHtml(orderId, cleanEmail, refundAmount, reason);
+
+  try {
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (resendApiKey && !resendApiKey.includes('placeholder')) {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${resendApiKey}`,
+        },
+        body: JSON.stringify({
+          from: `${STORE_CONFIG.name} <orders@sriyam.in>`,
+          to: [cleanEmail],
+          subject: `Refund Processed for Order ${orderId} — Sriyam Store`,
+          html: htmlContent,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        console.warn('[Email Service] Resend API error sending refund email:', errorData);
+        return { success: false, error: errorData?.message || 'Failed to send refund email via Resend' };
+      }
+
+      console.info(`[Email Service] Sent refund notification email for order ${orderId} to ${cleanEmail}`);
+      return { success: true };
+    }
+
+    console.info(`[Email Service] Refund notification email prepared for ${cleanEmail} (Order ${orderId}, Amount ₹${refundAmount}).`);
+    return { success: true };
+  } catch (err: any) {
+    console.error(`[Email Service] Error sending refund email for ${orderId}:`, err?.message);
+    return { success: false, error: err?.message };
+  }
+}
