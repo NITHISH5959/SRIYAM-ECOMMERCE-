@@ -153,7 +153,7 @@ export default async function OrderSuccessPage({ params }: OrderSuccessProps) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Track Order Online CTA */}
         <Link
-          href={`/track-order?orderId=${encodeURIComponent(displayOrderId)}&contact=${encodeURIComponent(order?.shipping_address?.phone || (order?.shipping_address as any)?.email || '')}`}
+          href={`/track-order?orderId=${encodeURIComponent(displayOrderId)}&contact=${encodeURIComponent(order?.contact_email || (order?.shipping_address as any)?.email || order?.shipping_address?.phone || '')}`}
           className="px-6 py-4 bg-zinc-900 hover:bg-amber-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-colors"
         >
           <Package className="w-4 h-4" />

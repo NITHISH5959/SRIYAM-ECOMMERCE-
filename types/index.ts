@@ -60,6 +60,7 @@ export interface Address {
   user_id: string;
   name: string;
   phone: string;
+  email?: string;
   line1: string;
   line2?: string;
   city: string;
@@ -83,6 +84,7 @@ export interface Order {
   id: string;
   order_number: string;
   user_id: string;
+  contact_email?: string | null;
   items: OrderItem[];
   subtotal: number;
   discount_amount: number;

@@ -105,7 +105,7 @@ function OrderRow({ order, onStatusChange, onRefund }: {
           {order.shipping_address && (
             <div className="bg-zinc-50 rounded-xl p-4 text-xs border border-zinc-200">
               <p className="font-bold text-zinc-700 flex items-center gap-1.5 mb-1"><MapPin className="w-3.5 h-3.5 text-amber-800" />Shipping Address</p>
-              <p className="text-zinc-600">{order.shipping_address.name} ({order.shipping_address.phone}) — {order.shipping_address.line1}, {order.shipping_address.city}, {order.shipping_address.state} – <span className="font-mono font-bold">{order.shipping_address.pincode}</span></p>
+              <p className="text-zinc-600">{order.shipping_address.name} ({order.shipping_address.phone}{(order.contact_email || order.shipping_address.email) ? ` · ${order.contact_email || order.shipping_address.email}` : ''}) — {order.shipping_address.line1}, {order.shipping_address.city}, {order.shipping_address.state} – <span className="font-mono font-bold">{order.shipping_address.pincode}</span></p>
             </div>
           )}
 
@@ -181,6 +181,7 @@ export default function AdminOrdersPage() {
     const orderId = (o.id || '').toLowerCase();
     const custName = (o.shipping_address?.name || '').toLowerCase();
     const custPhone = (o.shipping_address?.phone || '').toLowerCase();
+    const custEmail = (o.contact_email || o.shipping_address?.email || '').toLowerCase();
     const custCity = (o.shipping_address?.city || '').toLowerCase();
     const paymentId = (o.razorpay_payment_id || '').toLowerCase();
 
@@ -189,6 +190,7 @@ export default function AdminOrdersPage() {
       orderId.includes(q) ||
       custName.includes(q) ||
       custPhone.includes(q) ||
+      custEmail.includes(q) ||
       custCity.includes(q) ||
       paymentId.includes(q)
     );

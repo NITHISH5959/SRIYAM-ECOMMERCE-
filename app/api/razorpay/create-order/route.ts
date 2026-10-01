@@ -47,12 +47,14 @@ export async function POST(request: Request) {
       coupon_code,
       shipping_fee: clientShippingFee,
       user_id,
+      contact_email,
       shipping_address,
     }: {
       items: CreateOrderItem[];
       coupon_code?: string;
       shipping_fee: number;
       user_id?: string;
+      contact_email?: string;
       shipping_address?: Partial<Address>;
     } = body;
 
@@ -168,6 +170,8 @@ export async function POST(request: Request) {
       .map((i) => `${i.product_id}~${i.variant_id || ''}~${i.size || ''}~${i.quantity}`)
       .join('|');
 
+    const custEmail = (contact_email || (shipping_address as any)?.email || '').trim();
+
     const notes: Record<string, string> = {
       user_id: user_id ? user_id.slice(0, 256) : 'guest',
       coupon: verifiedCouponCode.slice(0, 256),
@@ -189,12 +193,15 @@ export async function POST(request: Request) {
       notes.items = minimalItems;
     }
 
+    if (custEmail) {
+      notes.contact_email = custEmail.slice(0, 256);
+      notes.cust_email = custEmail.slice(0, 256);
+    }
     if (shipping_address?.id) {
       notes.address_id = String(shipping_address.id).slice(0, 256);
     }
     if (shipping_address?.name) notes.cust_name = shipping_address.name.slice(0, 256);
     if (shipping_address?.phone) notes.cust_phone = shipping_address.phone.slice(0, 256);
-    if ((shipping_address as any)?.email) notes.cust_email = (shipping_address as any).email.slice(0, 256);
     if (shipping_address?.line1) notes.cust_line1 = shipping_address.line1.slice(0, 256);
     if (shipping_address?.line2) notes.cust_line2 = shipping_address.line2.slice(0, 256);
     if (shipping_address?.city) notes.cust_city = shipping_address.city.slice(0, 256);

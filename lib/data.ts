@@ -648,14 +648,23 @@ export async function setDefaultAddress(id: string, userId: string): Promise<boo
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
-const ORDER_SELECT_FIELDS = 'id, order_number, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at';
+const ORDER_SELECT_FIELDS = 'id, order_number, user_id, contact_email, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at';
 
 export async function createOrder(order: Partial<Order>): Promise<Order> {
+  const contactEmail = (order.contact_email || (order.shipping_address as any)?.email || '').trim() || null;
+  const shippingAddress = order.shipping_address
+    ? {
+        ...order.shipping_address,
+        ...(contactEmail ? { email: contactEmail } : {}),
+      }
+    : order.shipping_address;
+
   if (isSupabaseConfigured()) {
     // Trusted server action: use admin service_role client if available to bypass RLS, fallback to standard client
     const supabase = createAdminClient() || createClient();
     console.info('[createOrder] Inserting order into Supabase:', {
       user_id: order.user_id,
+      contact_email: contactEmail,
       items_count: order.items?.length,
       subtotal: order.subtotal,
       discount_amount: order.discount_amount,
@@ -668,6 +677,8 @@ export async function createOrder(order: Partial<Order>): Promise<Order> {
 
     const sanitizedOrder = {
       ...order,
+      contact_email: contactEmail,
+      shipping_address: shippingAddress,
       user_id: (order.user_id && isRealUuid(order.user_id)) ? order.user_id : null,
     };
 
@@ -700,6 +711,7 @@ export async function createOrder(order: Partial<Order>): Promise<Order> {
     id: `ord_${Date.now()}`,
     order_number: generatedOrderNumber,
     user_id: order.user_id || 'demo_user_id',
+    contact_email: contactEmail,
     items: order.items || [],
     subtotal: order.subtotal || 0,
     discount_amount: order.discount_amount || 0,
@@ -709,7 +721,7 @@ export async function createOrder(order: Partial<Order>): Promise<Order> {
     status: order.status || 'paid',
     razorpay_order_id: order.razorpay_order_id || '',
     razorpay_payment_id: order.razorpay_payment_id || '',
-    shipping_address: order.shipping_address as Address,
+    shipping_address: (shippingAddress || {}) as Address,
     created_at: new Date().toISOString(),
   };
   memoryOrders.push(newOrder);

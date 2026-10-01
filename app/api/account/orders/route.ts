@@ -7,7 +7,7 @@ import { Order } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
-const ORDER_SELECT_FIELDS = 'id, order_number, user_id, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at';
+const ORDER_SELECT_FIELDS = 'id, order_number, user_id, contact_email, items, subtotal, discount_amount, coupon_code, shipping_fee, total, status, razorpay_order_id, razorpay_payment_id, shipping_address, created_at';
 
 export async function GET(request: Request) {
   try {

@@ -6,7 +6,7 @@ import { STORE_CONFIG } from '@/lib/config';
  */
 export function generateOrderConfirmationHtml(order: Order, storeUrl = 'https://sriyam.in'): string {
   const displayId = order.order_number || order.id;
-  const contact = (order.shipping_address as any)?.email || order.shipping_address?.phone || '';
+  const contact = order.contact_email || (order.shipping_address as any)?.email || order.shipping_address?.phone || '';
   const trackingLink = `${storeUrl}/track-order?orderId=${encodeURIComponent(displayId)}&contact=${encodeURIComponent(contact)}`;
   
   const itemSummary = order.items.map(i => `${i.name}${i.size ? ` (${i.size})` : ''} x${i.quantity}`).join(', ');
@@ -187,7 +187,7 @@ export function generateOrderConfirmationHtml(order: Order, storeUrl = 'https://
  * Gracefully logs and succeeds even if an external SMTP/email provider is not configured.
  */
 export async function sendOrderConfirmationEmail(order: Order): Promise<{ success: boolean; error?: string }> {
-  const customerEmail = (order.shipping_address as any)?.email || (order as any).customer_email;
+  const customerEmail = (order.contact_email || (order.shipping_address as any)?.email || (order as any).customer_email || '').trim();
   const displayId = order.order_number || order.id;
 
   if (!customerEmail || !customerEmail.includes('@')) {

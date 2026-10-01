@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     // Verify contact info against order data
-    const orderEmail = (order.shipping_address as any)?.email?.toLowerCase() || '';
+    const orderEmail = (order.contact_email || (order.shipping_address as any)?.email || '').toLowerCase().trim();
     const orderPhone = (order.shipping_address?.phone || '').replace(/\D/g, '');
 
     let matches = false;

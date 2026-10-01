@@ -264,8 +264,17 @@ export async function POST(request: Request) {
       }
     }
 
+    const contactEmail = (orderData.contact_email || orderData.shipping_address?.email || '').trim() || null;
+    const shippingAddress = orderData.shipping_address
+      ? {
+          ...orderData.shipping_address,
+          ...(contactEmail ? { email: contactEmail } : {}),
+        }
+      : orderData.shipping_address;
+
     const orderPayload = {
       user_id: effectiveUserId || orderData.user_id || 'demo_user_id',
+      contact_email: contactEmail,
       items: verifiedItems,
       subtotal: calculatedSubtotal,
       discount_amount: calculatedDiscount,
@@ -275,7 +284,7 @@ export async function POST(request: Request) {
       status: 'paid' as const,
       razorpay_order_id,
       razorpay_payment_id: razorpay_payment_id || `pay_${Date.now()}`,
-      shipping_address: orderData.shipping_address,
+      shipping_address: shippingAddress,
     };
 
     console.info('[verify-payment] === INITIATING SUPABASE ORDER INSERT ===');

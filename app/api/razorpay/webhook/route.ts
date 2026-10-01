@@ -111,7 +111,8 @@ export async function POST(request: Request) {
           });
 
           const notes: Record<string, string> = paymentEntity?.notes || {};
-          await createOrderFromNotes(razorpayOrderId, razorpayPaymentId, notes);
+          const paymentEmail = paymentEntity?.email || '';
+          await createOrderFromNotes(razorpayOrderId, razorpayPaymentId, notes, paymentEmail);
         }
         break;
       }
@@ -162,7 +163,8 @@ export async function POST(request: Request) {
 async function createOrderFromNotes(
   razorpayOrderId: string,
   razorpayPaymentId: string,
-  notes: Record<string, string>
+  notes: Record<string, string>,
+  paymentEmail?: string
 ): Promise<void> {
   const { user_id, coupon, subtotal, discount, shipping, total, items: compactItems } = notes;
 
@@ -265,12 +267,14 @@ async function createOrderFromNotes(
   const storedShipping = parseFloat(shipping || '0');
   const couponCode = coupon || '';
 
+  const contactEmail = (notes.contact_email || notes.cust_email || paymentEmail || '').trim();
+
   const fallbackAddress = {
     id: notes.address_id || `addr_${Date.now()}`,
     user_id: user_id || 'guest',
     name: notes.cust_name || 'Customer',
     phone: notes.cust_phone || '',
-    email: notes.cust_email || '',
+    email: contactEmail || '',
     line1: notes.cust_line1 || 'Address not specified via webhook fallback',
     line2: notes.cust_line2 || '',
     city: notes.cust_city || 'City',
@@ -281,6 +285,7 @@ async function createOrderFromNotes(
 
   const newOrder = await createOrder({
     user_id,
+    contact_email: contactEmail || null,
     items: verifiedItems,
     subtotal: storedSubtotal,
     discount_amount: storedDiscount,

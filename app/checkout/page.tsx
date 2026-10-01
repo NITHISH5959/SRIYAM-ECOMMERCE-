@@ -318,11 +318,13 @@ export default function CheckoutPage() {
 
       // 3. Format shipping address and items payload
       const cleanPhone = phone.replace(/\D/g, '');
+      const cleanEmail = email.trim();
       const shippingAddress: Address = {
         id: selectedAddressId || `addr_${Date.now()}`,
         user_id: user?.id || 'guest',
         name: fullName.trim(),
         phone: cleanPhone,
+        email: cleanEmail,
         line1: addressLine1.trim(),
         line2: addressLine2.trim() || undefined,
         city: city.trim(),
@@ -349,6 +351,7 @@ export default function CheckoutPage() {
           coupon_code: coupon?.code || '',
           shipping_fee: effectiveShippingFee,
           user_id: user?.id || '',
+          contact_email: cleanEmail,
           shipping_address: shippingAddress,
         }),
       });
@@ -376,6 +379,7 @@ export default function CheckoutPage() {
               razorpay_signature: rpSig,
               orderData: {
                 user_id: user?.id || '',
+                contact_email: cleanEmail,
                 items: cartItems,
                 subtotal,
                 discount_amount: discountAmount,
