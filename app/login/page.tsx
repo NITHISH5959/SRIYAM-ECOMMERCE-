@@ -13,6 +13,7 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get('redirect') || '/account/orders';
+  const isForgotQuery = searchParams.get('forgot') === 'true' || searchParams.get('mode') === 'forgot';
 
   const { setUser } = useCart();
   const [email, setEmail] = useState('');
@@ -21,7 +22,7 @@ function LoginContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const [isForgotMode, setIsForgotMode] = useState(false);
+  const [isForgotMode, setIsForgotMode] = useState(isForgotQuery);
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotError, setForgotError] = useState('');
@@ -41,8 +42,12 @@ function LoginContent() {
       }
 
       const supabase = createClient();
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sriyam.in';
-      const redirectTo = `${origin}/reset-password`;
+      const siteUrl = (
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        'https://sriyam.store'
+      ).replace(/\/+$/, '');
+      const redirectTo = `${siteUrl}/auth/confirm?next=/reset-password`;
 
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo,

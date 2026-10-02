@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { getProducts, getCategories } from '@/lib/data';
 import ProductCard from '@/components/products/ProductCard';
 import FeaturedMasterpiece from '@/components/home/FeaturedMasterpiece';
+import AuthFallbackHandler from '@/components/auth/AuthFallbackHandler';
 import { STORE_CONFIG } from '@/lib/config';
 import { ArrowRight, Sparkles, Truck, Shield, Award, MessageCircle, Frame, MapPin } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -82,6 +83,7 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-16 lg:space-y-24 pb-16">
+      <AuthFallbackHandler />
       {/* Hero Banner */}
       <section className="relative overflow-hidden bg-gradient-to-b from-amber-50/60 via-zinc-50 to-white py-16 sm:py-24 border-b border-zinc-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

@@ -3,13 +3,16 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { STORE_CONFIG } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { Lock, ArrowRight, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 function ResetPasswordContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const hasExpiredError = searchParams.get('error') === 'expired';
+
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -19,7 +22,7 @@ function ResetPasswordContent() {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Check if the user arrived via a valid recovery link
+  // Check if the user has a valid session on load
   useEffect(() => {
     let isMounted = true;
     const supabase = createClient();
@@ -46,9 +49,11 @@ function ResetPasswordContent() {
     // Listen to auth state changes in case recovery token is being exchanged
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (isMounted) {
-        if (event === 'PASSWORD_RECOVERY' || (session?.user && event === 'SIGNED_IN')) {
+        if (event === 'PASSWORD_RECOVERY' || (session?.user && (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED'))) {
           setHasValidSession(true);
           setIsCheckingSession(false);
+        } else if (event === 'SIGNED_OUT') {
+          setHasValidSession(false);
         }
       }
     });
@@ -89,16 +94,14 @@ function ResetPasswordContent() {
       }
 
       if (data?.user) {
-        setSuccessMessage('Password successfully updated! Redirecting to your account...');
+        setSuccessMessage('Password successfully updated! Redirecting...');
 
         // Claim any matching guest orders after password update
         try {
           await fetch('/api/account/claim-orders', { method: 'POST' });
         } catch {}
 
-        setTimeout(() => {
-          router.push('/account/orders');
-        }, 1500);
+        router.push('/account/orders');
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'An unexpected error occurred. Please try again.');
@@ -123,17 +126,19 @@ function ResetPasswordContent() {
           <AlertCircle className="w-6 h-6" />
         </div>
         <div className="space-y-1">
-          <h1 className="text-xl font-serif font-bold text-zinc-900">Reset Link Expired or Invalid</h1>
+          <h1 className="text-xl font-serif font-bold text-zinc-900">
+            This link has expired. Request a new one.
+          </h1>
           <p className="text-xs text-zinc-500 leading-relaxed max-w-xs mx-auto">
             This password reset link is invalid or has already expired. Password reset links can only be used once.
           </p>
         </div>
         <div className="pt-2">
           <Link
-            href="/login"
+            href="/login?forgot=true"
             className="inline-flex items-center justify-center w-full py-3 bg-zinc-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-amber-800 transition-colors shadow-md"
           >
-            Request a New Reset Link
+            Back to Forgot Password
           </Link>
         </div>
       </div>
