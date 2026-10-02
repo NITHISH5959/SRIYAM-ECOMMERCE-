@@ -6,7 +6,7 @@ import { Order } from '@/types';
 import { STORE_CONFIG } from '@/lib/config';
 import {
   Package, ChevronDown, ChevronUp, RefreshCw, Loader2,
-  AlertTriangle, MapPin, CheckCircle2, Truck, Clock, XCircle, DollarSign, Search, X
+  AlertTriangle, MapPin, CheckCircle2, Truck, Clock, XCircle, DollarSign, Search, X, FileText
 } from 'lucide-react';
 
 const STATUSES = ['all', 'pending', 'paid', 'shipped', 'delivered', 'cancelled'] as const;
@@ -36,6 +36,8 @@ function OrderRow({ order, onStatusChange, onRefund }: {
   const [open, setOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [refunding, setRefunding] = useState(false);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+  const [invoiceError, setInvoiceError] = useState('');
   const displayId = order.order_number || order.id;
 
   const handleStatus = async (newStatus: Order['status']) => {
@@ -132,6 +134,43 @@ function OrderRow({ order, onStatusChange, onRefund }: {
                 </select>
                 {updating && <Loader2 className="w-4 h-4 text-amber-800 animate-spin flex-shrink-0" />}
               </div>
+            )}
+            {/* Invoice */}
+            {(order.status === 'paid' || order.status === 'shipped' || order.status === 'delivered') && (
+              <button
+                onClick={async () => {
+                  setDownloadingInvoice(true);
+                  setInvoiceError('');
+                  try {
+                    const res = await fetch(`/api/admin/orders/${order.id}/invoice`);
+                    if (!res.ok) {
+                      const errData = await res.json().catch(() => ({}));
+                      throw new Error(errData.error || `Failed (${res.status})`);
+                    }
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Invoice-${order.order_number || order.id}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                  } catch (err: any) {
+                    setInvoiceError(err?.message || 'Invoice download failed');
+                  } finally {
+                    setDownloadingInvoice(false);
+                  }
+                }}
+                disabled={downloadingInvoice}
+                className="flex items-center gap-2 px-4 py-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border border-zinc-200 font-bold text-xs uppercase rounded-lg transition-colors"
+              >
+                {downloadingInvoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                {downloadingInvoice ? 'Generating...' : 'Invoice'}
+              </button>
+            )}
+            {invoiceError && (
+              <span className="text-[11px] text-red-600 font-medium">{invoiceError}</span>
             )}
             {/* Refund */}
             {(order.status === 'paid' || order.status === 'shipped') && order.razorpay_payment_id && (
