@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { Package, Tag, ShoppingBag, Store, ExternalLink } from 'lucide-react';
+import { Package, Tag, ShoppingBag, BarChart3, Store, ExternalLink } from 'lucide-react';
 import { STORE_CONFIG } from '@/lib/config';
 
 /**
@@ -75,6 +75,18 @@ export default function AdminSidebar() {
           >
             <ShoppingBag className="w-4 h-4" />
             <span>Orders</span>
+          </Link>
+
+          <Link
+            href="/sriyamadmin/sales"
+            className={`flex items-center gap-3 px-4 py-3 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${
+              pathname.startsWith('/sriyamadmin/sales')
+                ? 'bg-amber-800 text-white shadow-sm'
+                : 'hover:bg-zinc-800/70 text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Sales</span>
           </Link>
         </nav>
       </div>
