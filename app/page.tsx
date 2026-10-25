@@ -87,16 +87,6 @@ export default async function HomePage() {
       <AuthFallbackHandler />
       {/* Hero Banner */}
       <section className="relative overflow-hidden bg-gradient-to-b from-amber-50/70 via-stone-50/40 to-white py-16 sm:py-24 border-b border-zinc-100">
-        {/* Subtle traditional temple arch watermark background */}
-        <div className="absolute inset-0 pointer-events-none opacity-[0.035] flex items-center justify-center">
-          <svg viewBox="0 0 800 800" className="w-[900px] h-[900px] text-amber-950" fill="currentColor">
-            <circle cx="400" cy="400" r="300" stroke="currentColor" strokeWidth="2" fill="none" />
-            <circle cx="400" cy="400" r="240" stroke="currentColor" strokeWidth="1.5" strokeDasharray="8 8" fill="none" />
-            <circle cx="400" cy="400" r="160" stroke="currentColor" strokeWidth="2" fill="none" />
-            <polygon points="400,100 480,240 640,240 510,330 560,480 400,390 240,480 290,330 160,240 320,240" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
-        </div>
-
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className={`grid grid-cols-1 ${hasMasterpiece ? 'lg:grid-cols-12 gap-12 items-center' : 'max-w-4xl mx-auto text-center'}`}>
             
@@ -185,54 +175,82 @@ export default async function HomePage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Frames Category */}
-          <Link
-            href="/shop?category=frames"
-            className="group relative bg-white border border-zinc-200 rounded-2xl p-8 hover:shadow-lg transition-all duration-300 overflow-hidden flex flex-col justify-between"
-          >
-            <div className="absolute top-0 right-0 p-8 text-amber-100 group-hover:text-amber-200 transition-colors">
-              <ArtFrameIcon className="w-32 h-32 stroke-[0.75] transform translate-x-8 -translate-y-8" />
+          {frameCount > 0 ? (
+            <Link
+              href="/shop?category=frames"
+              aria-label={`View frames (${frameCount})`}
+              className="group bg-white border border-zinc-200 rounded-2xl p-6 sm:p-7 flex flex-col justify-between h-full text-left transition-colors duration-200 hover:border-amber-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-800 focus-visible:ring-offset-2"
+            >
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-zinc-900 mb-2">
+                  Sacred Frames
+                </h3>
+                <p className="text-sm text-zinc-600 leading-relaxed">
+                  {framePreview}
+                </p>
+              </div>
+              <div className="mt-6 flex items-center gap-2 text-xs font-bold text-zinc-900 uppercase tracking-widest group-hover:text-amber-800 transition-colors">
+                <span>View frames ({frameCount})</span>
+                <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-[2px]" aria-hidden="true" />
+              </div>
+            </Link>
+          ) : (
+            <div
+              aria-disabled="true"
+              className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-7 flex flex-col justify-between h-full text-left cursor-default"
+            >
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-zinc-900 mb-2">
+                  Sacred Frames
+                </h3>
+                <p className="text-sm text-zinc-600 leading-relaxed">
+                  {framePreview}
+                </p>
+              </div>
+              <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+                <span>Coming soon</span>
+              </div>
             </div>
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200/60 inline-block mb-4">
-                {frameCount} Premium {frameCount === 1 ? 'Item' : 'Items'}
-              </span>
-              <h3 className="text-2xl font-serif font-bold text-zinc-900 group-hover:text-amber-800 transition-colors mb-2">
-                Sacred Frames
-              </h3>
-              <p className="text-sm text-zinc-600 max-w-md leading-relaxed">
-                {framePreview}
-              </p>
-            </div>
-            <div className="mt-8 flex items-center gap-2 text-xs font-bold text-zinc-900 uppercase tracking-widest group-hover:text-amber-800">
-              <span>View Frames ({frameCount})</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </div>
-          </Link>
+          )}
 
           {/* Rack Posters Category */}
-          <Link
-            href="/shop?category=rack-posters"
-            className="group relative bg-white border border-zinc-200 rounded-2xl p-8 hover:shadow-lg transition-all duration-300 overflow-hidden flex flex-col justify-between"
-          >
-            <div className="absolute top-0 right-0 p-8 text-amber-100 group-hover:text-amber-200 transition-colors">
-              <MapPin className="w-32 h-32 stroke-[0.75] transform translate-x-8 -translate-y-8" />
+          {posterCount > 0 ? (
+            <Link
+              href="/shop?category=rack-posters"
+              aria-label={`View rack posters (${posterCount})`}
+              className="group bg-white border border-zinc-200 rounded-2xl p-6 sm:p-7 flex flex-col justify-between h-full text-left transition-colors duration-200 hover:border-amber-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-800 focus-visible:ring-offset-2"
+            >
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-zinc-900 mb-2">
+                  Heritage Rack Posters
+                </h3>
+                <p className="text-sm text-zinc-600 leading-relaxed line-clamp-2">
+                  Temple heritage posters: Divya Desam, Sakthi Peedam and Paadal Petra Sthalam.
+                </p>
+              </div>
+              <div className="mt-6 flex items-center gap-2 text-xs font-bold text-zinc-900 uppercase tracking-widest group-hover:text-amber-800 transition-colors">
+                <span>View rack posters ({posterCount})</span>
+                <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-[2px]" aria-hidden="true" />
+              </div>
+            </Link>
+          ) : (
+            <div
+              aria-disabled="true"
+              className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-7 flex flex-col justify-between h-full text-left cursor-default"
+            >
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-zinc-900 mb-2">
+                  Heritage Rack Posters
+                </h3>
+                <p className="text-sm text-zinc-600 leading-relaxed line-clamp-2">
+                  Temple heritage posters: Divya Desam, Sakthi Peedam and Paadal Petra Sthalam.
+                </p>
+              </div>
+              <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+                <span>Coming soon</span>
+              </div>
             </div>
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200/60 inline-block mb-4">
-                {posterCount} Archival {posterCount === 1 ? 'Poster' : 'Posters'}
-              </span>
-              <h3 className="text-2xl font-serif font-bold text-zinc-900 group-hover:text-amber-800 transition-colors mb-2">
-                Heritage Rack Posters
-              </h3>
-              <p className="text-sm text-zinc-600 max-w-md leading-relaxed">
-                {posterPreview}
-              </p>
-            </div>
-            <div className="mt-8 flex items-center gap-2 text-xs font-bold text-zinc-900 uppercase tracking-widest group-hover:text-amber-800">
-              <span>View Rack Posters ({posterCount})</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </div>
-          </Link>
+          )}
         </div>
       </section>
 
