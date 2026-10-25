@@ -38,16 +38,25 @@ export default function ProductCard({ product }: ProductCardProps) {
 
   return (
     <div className="group relative bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-zinc-300 transition-all duration-300 flex flex-col justify-between">
-      {/* Badges: Out of Stock takes precedence, then Discount */}
+      {/* Badges: Out of Stock takes precedence, then Discount / Low Stock */}
       {isOutOfStock ? (
         <div className="absolute top-3 left-3 z-10 bg-zinc-800 text-zinc-200 text-[10px] font-bold px-2 py-0.5 rounded tracking-wide uppercase shadow-sm">
           Out of Stock
         </div>
-      ) : discountPercentage > 0 ? (
-        <div className="absolute top-3 left-3 z-10 bg-amber-700 text-white text-[10px] font-bold px-2 py-0.5 rounded tracking-wide uppercase shadow-sm">
-          {discountPercentage}% OFF
+      ) : (
+        <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 items-start">
+          {discountPercentage > 0 && (
+            <div className="bg-amber-700 text-white text-[10px] font-bold px-2 py-0.5 rounded tracking-wide uppercase shadow-sm">
+              {discountPercentage}% OFF
+            </div>
+          )}
+          {!isFrame && (product.stock ?? 0) > 0 && (product.stock ?? 0) <= 5 && (
+            <div className="bg-amber-50 text-amber-900 border border-amber-300 text-[10px] font-semibold px-2 py-0.5 rounded shadow-xs">
+              Only {product.stock} left
+            </div>
+          )}
         </div>
-      ) : null}
+      )}
 
       {/* Category Tag */}
       {product.category?.name && (

@@ -236,48 +236,36 @@ export default function ProductDetailClient({
               </div>
             )}
 
-            {/* Stock Status */}
-            <div className="flex items-center gap-2 pt-1">
-              {selectedVariant ? (
-                selectedVariant.stock > 0 ? (
-                  selectedVariant.stock <= 5 ? (
-                    <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
-                      ⚠️ Only {selectedVariant.stock} left in stock — order soon!
-                    </span>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
-                        In Stock ({selectedVariant.stock} units available)
-                      </span>
-                    </>
-                  )
-                ) : (
+            {/* Stock Status — visible to users only when stock is 5 or below, or out of stock */}
+            {selectedVariant ? (
+              selectedVariant.stock <= 0 ? (
+                <div className="flex items-center gap-2 pt-1">
                   <span className="text-xs font-semibold text-red-600 bg-red-50 px-2.5 py-1 rounded-md border border-red-200">
                     Out of Stock — {selectedVariant.size}
                   </span>
-                )
-              ) : !isFrame ? (
-                product.stock > 0 ? (
-                  product.stock <= 5 ? (
-                    <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
-                      ⚠️ Only {product.stock} left in stock — order soon!
-                    </span>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
-                        In Stock ({product.stock} units available)
-                      </span>
-                    </>
-                  )
-                ) : (
+                </div>
+              ) : selectedVariant.stock <= 5 ? (
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
+                    ⚠️ Only {selectedVariant.stock} left in stock — order soon!
+                  </span>
+                </div>
+              ) : null
+            ) : !isFrame ? (
+              product.stock <= 0 ? (
+                <div className="flex items-center gap-2 pt-1">
                   <span className="text-xs font-semibold text-red-600 bg-red-50 px-2.5 py-1 rounded-md border border-red-200">
                     Out of Stock
                   </span>
-                )
-              ) : null}
-            </div>
+                </div>
+              ) : product.stock <= 5 ? (
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
+                    ⚠️ Only {product.stock} left in stock — order soon!
+                  </span>
+                </div>
+              ) : null
+            ) : null}
 
             {/* Description */}
             <div className="border-t border-zinc-200 pt-4 text-sm text-zinc-600 leading-relaxed">
