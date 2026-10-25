@@ -1016,10 +1016,20 @@ export async function deductStock(
 export async function getCoupons(): Promise<Coupon[]> {
   try {
     if (!isSupabaseConfigured()) return memoryCoupons;
-    const supabase = createClient();
-    const { data, error } = await supabase.from('coupons').select('id, code, type, value, min_order_value, usage_limit, used_count, expires_at, active, created_at').order('created_at', { ascending: false });
-    if (!error && data && data.length > 0) return data as Coupon[];
-  } catch {}
+    const supabase = createAdminClient() || createClient();
+    const { data, error } = await supabase
+      .from('coupons')
+      .select('id, code, type, value, min_order_value, usage_limit, used_count, expires_at, active, created_at')
+      .order('created_at', { ascending: false });
+    if (!error && data !== null) {
+      return data as Coupon[];
+    }
+    if (error) {
+      console.error('[getCoupons Supabase error]', error);
+    }
+  } catch (err) {
+    console.error('[getCoupons catch error]', err);
+  }
   return memoryCoupons;
 }
 
@@ -1040,28 +1050,69 @@ export async function validateCouponCode(code: string, subtotal: number): Promis
 }
 
 export async function saveCoupon(coupon: Partial<Coupon>): Promise<Coupon> {
-  try {
-    if (!isSupabaseConfigured()) throw new Error('not configured');
-    const supabase = createClient();
+  const cleanCode = (coupon.code || 'COUPON').trim().toUpperCase();
+  const cleanPayload = {
+    code: cleanCode,
+    type: coupon.type || 'percentage',
+    value: Number(coupon.value) || 0,
+    min_order_value: Number(coupon.min_order_value) || 0,
+    usage_limit: coupon.usage_limit ? Number(coupon.usage_limit) : null,
+    expires_at: coupon.expires_at || null,
+    active: coupon.active ?? true,
+  };
+
+  if (isSupabaseConfigured()) {
+    const supabase = createAdminClient() || createClient();
     if (coupon.id && isRealUuid(coupon.id)) {
-      // Update existing row (real Supabase UUID)
-      const { data, error } = await supabase.from('coupons').update(coupon).eq('id', coupon.id).select().single();
-      if (!error && data) return data as Coupon;
+      // Update existing row
+      const { data, error } = await supabase
+        .from('coupons')
+        .update(cleanPayload)
+        .eq('id', coupon.id)
+        .select()
+        .single();
+      if (error) {
+        console.error('[saveCoupon update error]', error);
+        throw new Error(error.message || 'Failed to update coupon in database');
+      }
+      if (data) {
+        const saved = data as Coupon;
+        const idx = memoryCoupons.findIndex(c => c.id === saved.id);
+        if (idx !== -1) memoryCoupons[idx] = saved;
+        else memoryCoupons.unshift(saved);
+        return saved;
+      }
     } else {
       // Insert new row
-      const { data, error } = await supabase.from('coupons').insert([coupon]).select().single();
-      if (!error && data) return data as Coupon;
+      const { data, error } = await supabase
+        .from('coupons')
+        .insert([{ ...cleanPayload, used_count: coupon.used_count ?? 0 }])
+        .select()
+        .single();
+      if (error) {
+        console.error('[saveCoupon insert error]', error);
+        throw new Error(error.message || 'Failed to insert coupon into database');
+      }
+      if (data) {
+        const saved = data as Coupon;
+        memoryCoupons.unshift(saved);
+        return saved;
+      }
     }
-  } catch {}
+  }
+
+  // Fallback for local demo mode without Supabase
   if (coupon.id) {
     const idx = memoryCoupons.findIndex(c => c.id === coupon.id);
-    if (idx !== -1) { memoryCoupons[idx] = { ...memoryCoupons[idx], ...coupon } as Coupon; return memoryCoupons[idx]; }
+    if (idx !== -1) {
+      memoryCoupons[idx] = { ...memoryCoupons[idx], ...cleanPayload } as Coupon;
+      return memoryCoupons[idx];
+    }
   }
   const newCoupon: Coupon = {
-    id: `c_${Date.now()}`, code: (coupon.code || 'COUPON').toUpperCase(), type: coupon.type || 'percentage',
-    value: Number(coupon.value) || 0, min_order_value: Number(coupon.min_order_value) || 0,
-    usage_limit: coupon.usage_limit ? Number(coupon.usage_limit) : null, used_count: 0,
-    expires_at: coupon.expires_at || null, active: coupon.active ?? true,
+    id: `c_${Date.now()}`,
+    ...cleanPayload,
+    used_count: 0,
   };
   memoryCoupons = [newCoupon, ...memoryCoupons];
   return newCoupon;
@@ -1078,15 +1129,24 @@ export async function incrementCouponUsageCount(code: string): Promise<void> {
 
   if (isSupabaseConfigured()) {
     try {
-      const supabase = createClient();
-      // Atomically increment used_count directly in the DB
-      await supabase.rpc('increment_coupon_usage', { coupon_code: cleanCode });
+      const supabase = createAdminClient() || createClient();
+      const { data: c } = await supabase
+        .from('coupons')
+        .select('id, used_count')
+        .eq('code', cleanCode)
+        .maybeSingle();
+
+      if (c) {
+        await supabase
+          .from('coupons')
+          .update({ used_count: (c.used_count || 0) + 1 })
+          .eq('id', c.id);
+      }
     } catch (err) {
-      console.warn('[incrementCouponUsageCount] Supabase RPC failed, updating memory store only:', err);
+      console.warn('[incrementCouponUsageCount] Supabase update warning:', err);
     }
   }
 
-  // Always update the memory store so getCoupons() reflects the change in demo mode
   const idx = memoryCoupons.findIndex(c => c.code.toUpperCase() === cleanCode);
   if (idx !== -1) {
     memoryCoupons[idx] = { ...memoryCoupons[idx], used_count: memoryCoupons[idx].used_count + 1 };
@@ -1094,12 +1154,23 @@ export async function incrementCouponUsageCount(code: string): Promise<void> {
 }
 
 export async function deleteCoupon(id: string): Promise<boolean> {
-  try {
-    if (!isSupabaseConfigured()) throw new Error('not configured');
-    const supabase = createClient();
-    await supabase.from('coupons').delete().eq('id', id);
-  } catch {}
-  memoryCoupons = memoryCoupons.filter(c => c.id !== id);
+  if (isSupabaseConfigured()) {
+    const supabase = createAdminClient() || createClient();
+    if (isRealUuid(id)) {
+      const { error } = await supabase.from('coupons').delete().eq('id', id);
+      if (error) {
+        console.error('[deleteCoupon error]', error);
+        throw new Error(error.message || 'Failed to delete coupon from database');
+      }
+    } else {
+      // In case ID is the coupon code or demo identifier
+      const { error } = await supabase.from('coupons').delete().eq('code', id.toUpperCase());
+      if (error) {
+        console.error('[deleteCoupon by code error]', error);
+      }
+    }
+  }
+  memoryCoupons = memoryCoupons.filter(c => c.id !== id && c.code.toUpperCase() !== id.toUpperCase());
   return true;
 }
 

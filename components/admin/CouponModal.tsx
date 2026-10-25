@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Coupon } from '@/types';
-import { saveCoupon } from '@/lib/data';
-import { revalidateStorefront } from '@/app/actions';
-import { X, Check, Tag } from 'lucide-react';
+import { saveCouponAction } from '@/app/actions';
+import { X, Check, Tag, AlertCircle } from 'lucide-react';
 
 interface CouponModalProps {
   isOpen: boolean;
@@ -30,8 +29,10 @@ export default function CouponModal({
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
+    setErrorMsg('');
     if (couponToEdit) {
       setFormData({
         ...couponToEdit,
@@ -53,17 +54,22 @@ export default function CouponModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
+    setErrorMsg('');
     try {
-      await saveCoupon({
+      const res = await saveCouponAction({
         ...formData,
         code: (formData.code || '').toUpperCase().trim(),
         expires_at: formData.expires_at ? `${formData.expires_at}T23:59:59Z` : null,
       });
-      await revalidateStorefront();
-      onSuccess();
-      onClose();
-    } catch (err) {
+      if (res.success) {
+        onSuccess();
+        onClose();
+      } else {
+        setErrorMsg(res.error || 'Failed to save coupon.');
+      }
+    } catch (err: any) {
       console.error('Failed to save coupon', err);
+      setErrorMsg(err?.message || 'Failed to save coupon.');
     } finally {
       setIsSaving(false);
     }
@@ -92,6 +98,13 @@ export default function CouponModal({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {errorMsg && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs text-red-700">
+              <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
           {/* Coupon Code */}
           <div className="space-y-1">
             <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">

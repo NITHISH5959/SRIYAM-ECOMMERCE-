@@ -85,6 +85,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to load cart from storage', e);
     }
 
+    try {
+      const savedCouponCode = localStorage.getItem('sriyam_coupon');
+      if (savedCouponCode) {
+        setCouponCode(savedCouponCode);
+      }
+    } catch (e) {
+      console.error('Failed to load coupon from storage', e);
+    }
+
     setCartLoaded(true);
 
     // Sync live Supabase Auth session
@@ -169,22 +178,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // product.price already reflects the variant price (set in addToCart)
   const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
 
-  // Re-validate coupon whenever cart subtotal changes
+  // Re-validate coupon whenever cart subtotal changes or on initial load
   useEffect(() => {
-    if (coupon) {
-      validateCouponCode(coupon.code, subtotal).then((res) => {
-        if (res.success) {
+    if (!cartLoaded) return;
+    const activeCode = coupon ? coupon.code : couponCode;
+    if (activeCode) {
+      validateCouponCode(activeCode, subtotal).then((res) => {
+        if (res.success && res.coupon) {
+          setCoupon(res.coupon);
+          setCouponCode(res.coupon.code);
           setDiscountAmount(res.discountAmount);
           setIsFreeShippingCoupon(res.isFreeShipping);
         } else {
           setCoupon(null);
+          setCouponCode('');
           setDiscountAmount(0);
           setIsFreeShippingCoupon(false);
-          setCouponMessage({ type: 'error', text: res.message });
+          try {
+            localStorage.removeItem('sriyam_coupon');
+          } catch {}
+          if (coupon) {
+            setCouponMessage({ type: 'error', text: res.message });
+          }
         }
       });
     }
-  }, [subtotal]);
+  }, [subtotal, cartLoaded]);
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
@@ -256,29 +275,41 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const clearCart = () => {
     setCart([]);
     setCoupon(null);
+    setCouponCode('');
     setDiscountAmount(0);
     setIsFreeShippingCoupon(false);
     setCouponMessage(null);
-    setCouponCode('');
+    try {
+      localStorage.removeItem('sriyam_coupon');
+    } catch {}
   };
 
   const applyCoupon = async (code: string): Promise<boolean> => {
-    if (!code.trim()) {
+    const clean = code.trim().toUpperCase();
+    if (!clean) {
       setCouponMessage({ type: 'error', text: 'Please enter a coupon code.' });
       return false;
     }
-    const res = await validateCouponCode(code, subtotal);
+    const res = await validateCouponCode(clean, subtotal);
     if (res.success && res.coupon) {
       setCoupon(res.coupon);
+      setCouponCode(res.coupon.code);
       setDiscountAmount(res.discountAmount);
       setIsFreeShippingCoupon(res.isFreeShipping);
       setCouponMessage({ type: 'success', text: res.message });
+      try {
+        localStorage.setItem('sriyam_coupon', res.coupon.code);
+      } catch {}
       return true;
     } else {
       setCoupon(null);
+      setCouponCode('');
       setDiscountAmount(0);
       setIsFreeShippingCoupon(false);
       setCouponMessage({ type: 'error', text: res.message });
+      try {
+        localStorage.removeItem('sriyam_coupon');
+      } catch {}
       return false;
     }
   };
@@ -289,6 +320,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setDiscountAmount(0);
     setIsFreeShippingCoupon(false);
     setCouponMessage(null);
+    try {
+      localStorage.removeItem('sriyam_coupon');
+    } catch {}
   };
 
   return (

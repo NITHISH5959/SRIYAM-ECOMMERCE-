@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { checkIsAdmin } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { saveProduct, saveVariants, deleteProduct } from '@/lib/data';
-import { Product } from '@/types';
+import { saveProduct, saveVariants, deleteProduct, saveCoupon, deleteCoupon, getCoupons } from '@/lib/data';
+import { Product, Coupon } from '@/types';
 
 export interface ActionResponse<T = any> {
   success: boolean;
@@ -31,7 +31,10 @@ export async function revalidateStorefront() {
   try {
     revalidatePath('/');
     revalidatePath('/shop');
+    revalidatePath('/cart');
+    revalidatePath('/checkout');
     revalidatePath('/sriyamadmin/products');
+    revalidatePath('/sriyamadmin/coupons');
   } catch (error) {
     console.error('Failed to revalidate cache paths:', error);
   }
@@ -449,6 +452,261 @@ export async function toggleProductActiveAction(
       success: false,
       error: err?.message || 'An unexpected error occurred while toggling product status.',
     };
+  }
+}
+
+/**
+ * Server Action to load all coupons for the admin dashboard.
+ * Uses service role client to bypass RLS so both active and inactive coupons are returned.
+ */
+export async function getCouponsAdminAction(): Promise<ActionResponse<Coupon[]>> {
+  try {
+    const isAdmin = await checkIsAdmin();
+    if (!isAdmin) {
+      return {
+        success: false,
+        error: 'Unauthorized: You must be logged in as an administrator to view coupons.',
+      };
+    }
+
+    const adminSupabase = createAdminClient();
+    if (!adminSupabase) {
+      const data = await getCoupons();
+      return { success: true, data };
+    }
+
+    const { data, error } = await adminSupabase
+      .from('coupons')
+      .select('id, code, type, value, min_order_value, usage_limit, used_count, expires_at, active, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[getCouponsAdminAction error]', error);
+      return { success: false, error: `Failed to load coupons: ${error.message}` };
+    }
+
+    return { success: true, data: (data as Coupon[]) || [] };
+  } catch (err: any) {
+    console.error('[getCouponsAdminAction unexpected error]', err);
+    return { success: false, error: err?.message || 'An unexpected error occurred while loading coupons.' };
+  }
+}
+
+/**
+ * Server Action to save or update a coupon.
+ * Strictly verifies admin privileges via checkIsAdmin() and uses service_role client.
+ */
+export async function saveCouponAction(couponData: Partial<Coupon>): Promise<ActionResponse<Coupon>> {
+  try {
+    const isAdmin = await checkIsAdmin();
+    if (!isAdmin) {
+      return {
+        success: false,
+        error: 'Unauthorized: You must be logged in as an administrator to manage coupons. Please sign in at /sriyamadmin/login.',
+      };
+    }
+
+    const rawCode = (couponData.code || '').trim().toUpperCase();
+    if (!rawCode) {
+      return { success: false, error: 'Coupon code is required.' };
+    }
+
+    const cleanPayload = {
+      code: rawCode,
+      type: couponData.type || 'percentage',
+      value: Number(couponData.value) || 0,
+      min_order_value: Math.max(0, Number(couponData.min_order_value) || 0),
+      usage_limit: couponData.usage_limit ? Math.max(1, Number(couponData.usage_limit)) : null,
+      expires_at: couponData.expires_at || null,
+      active: couponData.active ?? true,
+    };
+
+    const adminSupabase = createAdminClient();
+    if (!adminSupabase) {
+      try {
+        const saved = await saveCoupon({ ...cleanPayload, id: couponData.id });
+        await revalidateStorefront();
+        return { success: true, data: saved };
+      } catch (fbErr: any) {
+        return { success: false, error: fbErr?.message || 'Failed to save coupon in fallback mode.' };
+      }
+    }
+
+    const isUpdate = Boolean(couponData.id && isRealUuid(couponData.id));
+    let savedCoupon: Coupon;
+
+    if (isUpdate) {
+      const { data, error } = await adminSupabase
+        .from('coupons')
+        .update(cleanPayload)
+        .eq('id', couponData.id)
+        .select()
+        .single();
+
+      if (error || !data) {
+        console.error('[saveCouponAction update error]', error);
+        return { success: false, error: `Failed to update coupon: ${error?.message || 'Database error'}` };
+      }
+      savedCoupon = data as Coupon;
+    } else {
+      // Check for duplicate code
+      const { data: existing } = await adminSupabase
+        .from('coupons')
+        .select('id, code')
+        .eq('code', rawCode)
+        .maybeSingle();
+
+      if (existing) {
+        return { success: false, error: `Coupon code "${rawCode}" already exists. Please choose a different code.` };
+      }
+
+      const { data, error } = await adminSupabase
+        .from('coupons')
+        .insert([{ ...cleanPayload, used_count: 0 }])
+        .select()
+        .single();
+
+      if (error || !data) {
+        console.error('[saveCouponAction insert error]', error);
+        return { success: false, error: `Failed to create coupon: ${error?.message || 'Database error'}` };
+      }
+      savedCoupon = data as Coupon;
+    }
+
+    // Sync memory store
+    try {
+      await saveCoupon(savedCoupon);
+    } catch {}
+
+    try {
+      revalidatePath('/sriyamadmin/coupons');
+      revalidatePath('/cart');
+      revalidatePath('/checkout');
+    } catch (err) {
+      console.error('Failed to revalidate coupon paths:', err);
+    }
+
+    return { success: true, data: savedCoupon };
+  } catch (err: any) {
+    console.error('[saveCouponAction unexpected error]', err);
+    return { success: false, error: err?.message || 'An unexpected error occurred while saving coupon.' };
+  }
+}
+
+/**
+ * Server Action to delete a coupon.
+ * Strictly verifies admin privileges via checkIsAdmin() and uses service_role client.
+ */
+export async function deleteCouponAction(id: string): Promise<ActionResponse<boolean>> {
+  try {
+    const isAdmin = await checkIsAdmin();
+    if (!isAdmin) {
+      return {
+        success: false,
+        error: 'Unauthorized: You must be logged in as an administrator to delete coupons. Please sign in at /sriyamadmin/login.',
+      };
+    }
+
+    if (!id) {
+      return { success: false, error: 'Invalid coupon identifier.' };
+    }
+
+    const adminSupabase = createAdminClient();
+    if (!adminSupabase) {
+      try {
+        const ok = await deleteCoupon(id);
+        await revalidateStorefront();
+        return { success: true, data: ok };
+      } catch (fbErr: any) {
+        return { success: false, error: fbErr?.message || 'Failed to delete coupon in fallback mode.' };
+      }
+    }
+
+    let error = null;
+    if (isRealUuid(id)) {
+      const res = await adminSupabase.from('coupons').delete().eq('id', id);
+      error = res.error;
+    } else {
+      // In case ID is code
+      const res = await adminSupabase.from('coupons').delete().eq('code', id.toUpperCase());
+      error = res.error;
+    }
+
+    if (error) {
+      console.error('[deleteCouponAction error]', error);
+      return { success: false, error: `Failed to delete coupon: ${error.message}` };
+    }
+
+    // Sync memory store
+    try {
+      await deleteCoupon(id);
+    } catch {}
+
+    try {
+      revalidatePath('/sriyamadmin/coupons');
+      revalidatePath('/cart');
+      revalidatePath('/checkout');
+    } catch (err) {
+      console.error('Failed to revalidate coupon paths:', err);
+    }
+
+    return { success: true, data: true };
+  } catch (err: any) {
+    console.error('[deleteCouponAction unexpected error]', err);
+    return { success: false, error: err?.message || 'An unexpected error occurred while deleting coupon.' };
+  }
+}
+
+/**
+ * Server Action to toggle a coupon's active status.
+ */
+export async function toggleCouponActiveAction(
+  id: string,
+  active: boolean
+): Promise<ActionResponse<Coupon>> {
+  try {
+    const isAdmin = await checkIsAdmin();
+    if (!isAdmin) {
+      return {
+        success: false,
+        error: 'Unauthorized: You must be logged in as an administrator to modify coupons.',
+      };
+    }
+
+    if (!id) {
+      return { success: false, error: 'Invalid coupon identifier.' };
+    }
+
+    const adminSupabase = createAdminClient();
+    if (!adminSupabase) {
+      const saved = await saveCoupon({ id, active });
+      return { success: true, data: saved };
+    }
+
+    const { data, error } = await adminSupabase
+      .from('coupons')
+      .update({ active })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error('[toggleCouponActiveAction error]', error);
+      return { success: false, error: `Failed to update coupon status: ${error?.message || 'Database error'}` };
+    }
+
+    try {
+      revalidatePath('/sriyamadmin/coupons');
+      revalidatePath('/cart');
+      revalidatePath('/checkout');
+    } catch (err) {
+      console.error('Failed to revalidate coupon paths:', err);
+    }
+
+    return { success: true, data: data as Coupon };
+  } catch (err: any) {
+    console.error('[toggleCouponActiveAction unexpected error]', err);
+    return { success: false, error: err?.message || 'An unexpected error occurred while updating coupon status.' };
   }
 }
 

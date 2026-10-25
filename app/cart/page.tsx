@@ -58,6 +58,11 @@ export default function CartPage() {
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
   const [stockErrors, setStockErrors] = useState<StockErrorItem[]>([]);
 
+  // Keep inputCode synchronized with active coupon
+  useEffect(() => {
+    setInputCode(coupon ? coupon.code : '');
+  }, [coupon]);
+
   // Dynamic shipping note
   const isFreeShipping = isFreeShippingCoupon;
   const totalAmount = Math.max(0, subtotal - discountAmount);
@@ -104,8 +109,9 @@ export default function CartPage() {
 
   const handleApplyCouponSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!inputCode.trim()) return;
     setIsApplying(true);
-    await applyCoupon(inputCode);
+    await applyCoupon(inputCode.trim());
     setIsApplying(false);
   };
 
@@ -377,8 +383,14 @@ export default function CartPage() {
                     </p>
                   </div>
                   <button
-                    onClick={removeCoupon}
-                    className="p-1 text-amber-700 hover:text-red-600 rounded-full"
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeCoupon();
+                      setInputCode('');
+                    }}
+                    className="p-1 text-amber-700 hover:text-red-600 rounded-full transition-colors"
                     title="Remove coupon"
                   >
                     <X className="w-4 h-4" />
@@ -396,7 +408,7 @@ export default function CartPage() {
                   />
                   <button
                     type="submit"
-                    disabled={isApplying}
+                    disabled={isApplying || !inputCode.trim()}
                     className="px-4 py-2 bg-zinc-900 text-white font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-amber-800 transition-colors disabled:opacity-50"
                   >
                     {isApplying ? 'Applying...' : 'Apply'}

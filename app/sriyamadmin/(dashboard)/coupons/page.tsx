@@ -2,15 +2,19 @@
 
 import React, { useState, useEffect } from 'react';
 import { Coupon } from '@/types';
-import { getCoupons, saveCoupon, deleteCoupon } from '@/lib/data';
-import { revalidateStorefront } from '@/app/actions';
+import {
+  getCouponsAdminAction,
+  deleteCouponAction,
+  toggleCouponActiveAction,
+} from '@/app/actions';
 import CouponModal from '@/components/admin/CouponModal';
-import { Tag, Plus, Edit2, Trash2, CheckCircle2, XCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { Tag, Plus, Edit2, Trash2, CheckCircle2, XCircle, RefreshCw, AlertCircle } from 'lucide-react';
 import { STORE_CONFIG } from '@/lib/config';
 
 export default function AdminCouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -18,11 +22,17 @@ export default function AdminCouponsPage() {
 
   const loadCoupons = async () => {
     setIsLoading(true);
+    setErrorMessage('');
     try {
-      const data = await getCoupons();
-      setCoupons(data);
-    } catch (e) {
+      const res = await getCouponsAdminAction();
+      if (res.success && res.data) {
+        setCoupons(res.data);
+      } else {
+        setErrorMessage(res.error || 'Failed to load coupons from database.');
+      }
+    } catch (e: any) {
       console.error('Failed to load coupons', e);
+      setErrorMessage(e?.message || 'Failed to load coupons.');
     } finally {
       setIsLoading(false);
     }
@@ -33,19 +43,30 @@ export default function AdminCouponsPage() {
   }, []);
 
   const handleToggleActive = async (coupon: Coupon) => {
-    await saveCoupon({
-      ...coupon,
-      active: !coupon.active,
-    });
-    await revalidateStorefront();
-    await loadCoupons();
+    try {
+      const res = await toggleCouponActiveAction(coupon.id, !coupon.active);
+      if (!res.success) {
+        alert(res.error || 'Failed to update coupon status.');
+        return;
+      }
+      await loadCoupons();
+    } catch (err: any) {
+      alert(err?.message || 'Error updating coupon status.');
+    }
   };
 
   const handleDelete = async (id: string, code: string) => {
-    if (confirm(`Are you sure you want to delete coupon code "${code}"?`)) {
-      await deleteCoupon(id);
-      await revalidateStorefront();
-      await loadCoupons();
+    if (confirm(`Are you sure you want to permanently delete coupon code "${code}" from the database?`)) {
+      try {
+        const res = await deleteCouponAction(id);
+        if (!res.success) {
+          alert(res.error || `Failed to delete coupon "${code}".`);
+          return;
+        }
+        await loadCoupons();
+      } catch (err: any) {
+        alert(err?.message || `Error deleting coupon "${code}".`);
+      }
     }
   };
 
@@ -88,6 +109,14 @@ export default function AdminCouponsPage() {
           </button>
         </div>
       </div>
+
+      {/* Error Message */}
+      {errorMessage && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2.5 text-xs text-red-800">
+          <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
 
       {/* Coupons Table */}
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">

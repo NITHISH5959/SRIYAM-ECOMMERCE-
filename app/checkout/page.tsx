@@ -128,6 +128,11 @@ export default function CheckoutPage() {
   const [discountInput, setDiscountInput] = useState('');
   const [isApplyingDiscount, setIsApplyingDiscount] = useState(false);
 
+  // Keep discountInput synchronized with active coupon
+  useEffect(() => {
+    setDiscountInput(coupon ? coupon.code : '');
+  }, [coupon]);
+
   // Mobile order summary accordion state
   const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
 
@@ -626,7 +631,17 @@ export default function CheckoutPage() {
                       ({coupon.type === 'free_shipping' ? 'Free Shipping' : `₹${discountAmount} off`})
                     </span>
                   </div>
-                  <button type="button" onClick={removeCoupon} className="text-zinc-400 hover:text-red-600">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeCoupon();
+                      setDiscountInput('');
+                    }}
+                    className="text-zinc-400 hover:text-red-600 p-1"
+                    title="Remove coupon"
+                  >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -1177,7 +1192,12 @@ export default function CheckoutPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={removeCoupon}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        removeCoupon();
+                        setDiscountInput('');
+                      }}
                       className="p-1 text-zinc-400 hover:text-red-600 rounded-full transition-colors"
                       title="Remove coupon"
                     >
