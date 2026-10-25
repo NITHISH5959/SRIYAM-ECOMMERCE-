@@ -5,7 +5,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Product } from '@/types';
 import { STORE_CONFIG } from '@/lib/config';
-import { Sparkles, ArrowRight, ChevronLeft, ChevronRight, Frame, MapPin } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
+import { SacredDiyaIcon, ArtFrameIcon } from '@/components/ui/SacredIcons';
 
 interface FeaturedMasterpieceProps {
   products: Product[];
@@ -33,32 +34,36 @@ export default function FeaturedMasterpiece({ products }: FeaturedMasterpiecePro
 
   return (
     <div className="relative mx-auto max-w-md w-full">
-      <div className="relative bg-white p-6 sm:p-7 rounded-2xl shadow-2xl border border-amber-200/70 overflow-hidden group">
-        {/* Glow effect */}
-        <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-400/20 rounded-full blur-3xl pointer-events-none" />
-        
+      {/* Outer artisan mount with subtle double-border inspired by authentic temple framing */}
+      <div className="relative bg-[#FCFAF7] p-5 sm:p-6 rounded-2xl shadow-xl border border-amber-900/15 overflow-hidden group">
+        {/* Subtle traditional corner accents */}
+        <div className="absolute top-2 left-2 w-2 h-2 border-t border-l border-amber-800/30" />
+        <div className="absolute top-2 right-2 w-2 h-2 border-t border-r border-amber-800/30" />
+        <div className="absolute bottom-2 left-2 w-2 h-2 border-b border-l border-amber-800/30" />
+        <div className="absolute bottom-2 right-2 w-2 h-2 border-b border-r border-amber-800/30" />
+
         {/* Top Badges & Controls */}
-        <div className="flex items-center justify-between gap-2 mb-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-900 border border-amber-300/80 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-sm">
-            <Sparkles className="w-3 h-3 text-amber-700" />
-            <span>Featured Masterpiece</span>
+        <div className="flex items-center justify-between gap-2 mb-3.5">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100/90 text-amber-950 border border-amber-300/80 rounded-md text-[11px] font-serif font-bold tracking-wider uppercase shadow-xs">
+            <SacredDiyaIcon className="w-3.5 h-3.5" />
+            <span>Curated Masterpiece</span>
           </div>
 
           {hasMultiple && (
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-mono text-zinc-400 mr-1">
-                {currentIndex + 1} / {products.length}
+            <div className="flex items-center gap-1.5 bg-white/80 px-2 py-0.5 rounded-full border border-stone-200/80 shadow-xs">
+              <span className="text-[10px] font-serif font-semibold text-stone-500 mr-0.5">
+                {currentIndex + 1} of {products.length}
               </span>
               <button
                 onClick={prevProduct}
-                className="p-1 rounded-full border border-zinc-200 text-zinc-600 hover:bg-zinc-100 transition-colors"
+                className="p-1 rounded-full text-stone-600 hover:text-amber-900 hover:bg-stone-100 transition-colors"
                 aria-label="Previous featured product"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={nextProduct}
-                className="p-1 rounded-full border border-zinc-200 text-zinc-600 hover:bg-zinc-100 transition-colors"
+                className="p-1 rounded-full text-stone-600 hover:text-amber-900 hover:bg-stone-100 transition-colors"
                 aria-label="Next featured product"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -69,7 +74,7 @@ export default function FeaturedMasterpiece({ products }: FeaturedMasterpiecePro
 
         {/* Product Card Container */}
         <Link href={`/product/${currentProduct.slug}`} className="block group/card">
-          <div className="aspect-[4/5] bg-gradient-to-br from-amber-50 via-stone-100 to-amber-100/60 rounded-xl overflow-hidden relative border border-amber-200/50 shadow-inner flex flex-col justify-between p-6 text-center">
+          <div className="aspect-[4/5] bg-stone-900 rounded-xl overflow-hidden relative border-2 border-amber-950/20 shadow-inner flex flex-col justify-between p-5 sm:p-6 text-center">
             {hasImage ? (
               <div className="absolute inset-0">
                 <img
@@ -81,9 +86,9 @@ export default function FeaturedMasterpiece({ products }: FeaturedMasterpiecePro
               </div>
             ) : (
               <div className="relative z-10 flex flex-col items-center justify-center my-auto">
-                <div className="w-16 h-16 rounded-2xl bg-white/90 shadow-md flex items-center justify-center text-amber-800 mb-3">
+                <div className="w-16 h-16 rounded-2xl bg-white/95 shadow-md flex items-center justify-center text-amber-800 mb-3 border border-amber-200/60">
                   {currentProduct.category?.slug === 'frames' ? (
-                    <Frame className="w-8 h-8 stroke-[1.5]" />
+                    <ArtFrameIcon className="w-8 h-8 text-amber-800" />
                   ) : (
                     <MapPin className="w-8 h-8 stroke-[1.5]" />
                   )}
@@ -94,8 +99,8 @@ export default function FeaturedMasterpiece({ products }: FeaturedMasterpiecePro
             {/* Top metadata */}
             <div className="relative z-10 text-left">
               {currentProduct.category && (
-                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                  hasImage ? 'bg-black/60 text-amber-300 backdrop-blur-sm' : 'bg-amber-100 text-amber-900'
+                <span className={`text-[10px] font-serif font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded ${
+                  hasImage ? 'bg-black/75 text-amber-200 border border-amber-500/30 backdrop-blur-sm' : 'bg-amber-100 text-amber-950 border border-amber-300/60'
                 }`}>
                   {currentProduct.category.name}
                 </span>
@@ -104,7 +109,7 @@ export default function FeaturedMasterpiece({ products }: FeaturedMasterpiecePro
 
             {/* Bottom info */}
             <div className={`relative z-10 text-left space-y-2 ${hasImage ? 'text-white' : 'text-zinc-900'}`}>
-              <h3 className="text-lg sm:text-xl font-serif font-bold tracking-tight line-clamp-1 group-hover/card:text-amber-400 transition-colors">
+              <h3 className="text-lg sm:text-xl font-serif font-bold tracking-tight line-clamp-1 group-hover/card:text-amber-300 transition-colors">
                 {currentProduct.name}
               </h3>
 
@@ -127,8 +132,8 @@ export default function FeaturedMasterpiece({ products }: FeaturedMasterpiecePro
                   )}
                 </div>
 
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-800 text-white hover:bg-amber-700 text-xs font-bold uppercase tracking-wider rounded-lg shadow-md transition-colors">
-                  <span>View</span>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-800 text-white hover:bg-amber-700 text-xs font-semibold uppercase tracking-wider rounded-lg shadow-md transition-colors">
+                  <span>Explore</span>
                   <ArrowRight className="w-3.5 h-3.5 group-hover/card:translate-x-0.5 transition-transform" />
                 </div>
               </div>

@@ -5,7 +5,8 @@ import ProductCard from '@/components/products/ProductCard';
 import FeaturedMasterpiece from '@/components/home/FeaturedMasterpiece';
 import AuthFallbackHandler from '@/components/auth/AuthFallbackHandler';
 import { STORE_CONFIG } from '@/lib/config';
-import { ArrowRight, Sparkles, Truck, Shield, Award, MessageCircle, Frame, MapPin } from 'lucide-react';
+import { ArrowRight, Truck, Shield, Award, MessageCircle, MapPin } from 'lucide-react';
+import { SacredDiyaIcon, ArtFrameIcon } from '@/components/ui/SacredIcons';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -85,15 +86,27 @@ export default async function HomePage() {
     <div className="space-y-16 lg:space-y-24 pb-16">
       <AuthFallbackHandler />
       {/* Hero Banner */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-amber-50/60 via-zinc-50 to-white py-16 sm:py-24 border-b border-zinc-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="relative overflow-hidden bg-gradient-to-b from-amber-50/70 via-stone-50/40 to-white py-16 sm:py-24 border-b border-zinc-100">
+        {/* Subtle traditional temple arch watermark background */}
+        <div className="absolute inset-0 pointer-events-none opacity-[0.035] flex items-center justify-center">
+          <svg viewBox="0 0 800 800" className="w-[900px] h-[900px] text-amber-950" fill="currentColor">
+            <circle cx="400" cy="400" r="300" stroke="currentColor" strokeWidth="2" fill="none" />
+            <circle cx="400" cy="400" r="240" stroke="currentColor" strokeWidth="1.5" strokeDasharray="8 8" fill="none" />
+            <circle cx="400" cy="400" r="160" stroke="currentColor" strokeWidth="2" fill="none" />
+            <polygon points="400,100 480,240 640,240 510,330 560,480 400,390 240,480 290,330 160,240 320,240" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className={`grid grid-cols-1 ${hasMasterpiece ? 'lg:grid-cols-12 gap-12 items-center' : 'max-w-4xl mx-auto text-center'}`}>
             
             {/* Left Content */}
             <div className={`${hasMasterpiece ? 'lg:col-span-7 text-center lg:text-left' : 'text-center'} space-y-6`}>
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100/80 text-amber-900 border border-amber-200/80 rounded-full text-xs font-semibold uppercase tracking-widest">
-                <Sparkles className="w-3.5 h-3.5 text-amber-700" />
-                <span>Original Sacred Heritage Collection</span>
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-amber-50/90 text-amber-950 border border-amber-300/70 rounded-full text-xs font-medium tracking-wide shadow-xs">
+                <SacredDiyaIcon className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                <span className="font-serif font-semibold tracking-wider text-[11px] uppercase">Original Sacred Heritage Art</span>
+                <span className="w-1 h-1 rounded-full bg-amber-700/40" />
+                <span className="text-[11px] text-amber-800 font-normal">Temple Sanctum Edition</span>
               </div>
 
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-serif font-bold text-zinc-900 tracking-tight leading-[1.15]">
@@ -109,32 +122,41 @@ export default async function HomePage() {
                   href="/shop"
                   className="w-full sm:w-auto px-8 py-3.5 bg-zinc-900 text-white font-semibold text-xs uppercase tracking-widest rounded-lg hover:bg-amber-800 transition-colors duration-200 shadow-md flex items-center justify-center gap-2 group"
                 >
-                  <span>Explore Store</span>
+                  <span>Explore Collection</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </Link>
 
                 <Link
                   href="/shop?category=frames"
-                  className="w-full sm:w-auto px-8 py-3.5 bg-white text-zinc-800 border border-zinc-300 font-semibold text-xs uppercase tracking-widest rounded-lg hover:bg-zinc-50 transition-colors duration-200 flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-7 py-3.5 bg-white text-zinc-800 border border-zinc-300/90 font-semibold text-xs uppercase tracking-wider rounded-lg hover:bg-amber-50/50 hover:border-amber-400/80 transition-all duration-200 flex items-center justify-center gap-2.5 shadow-xs"
                 >
-                  <Frame className="w-4 h-4 text-amber-700" />
+                  <ArtFrameIcon className="w-4 h-4 text-amber-800 flex-shrink-0" />
                   <span>Sacred Frames</span>
                 </Link>
               </div>
 
               {/* Trust Indicators */}
-              <div className={`pt-6 grid grid-cols-3 gap-4 border-t border-zinc-200/60 max-w-lg ${hasMasterpiece ? 'mx-auto lg:mx-0' : 'mx-auto'} text-left`}>
-                <div>
-                  <p className="text-lg font-bold text-zinc-900">100%</p>
-                  <p className="text-[11px] text-zinc-500 font-medium">Sacred Accuracy</p>
+              <div className={`pt-6 grid grid-cols-3 gap-5 border-t border-zinc-200/70 max-w-lg ${hasMasterpiece ? 'mx-auto lg:mx-0' : 'mx-auto'} text-left`}>
+                <div className="space-y-0.5">
+                  <p className="text-sm sm:text-base font-serif font-bold text-zinc-900 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-700" />
+                    100% Authentic
+                  </p>
+                  <p className="text-[11px] text-zinc-500 font-medium leading-tight">Temple Sthala Puranam</p>
                 </div>
-                <div>
-                  <p className="text-lg font-bold text-zinc-900">Pan India</p>
-                  <p className="text-[11px] text-zinc-500 font-medium">Express Shipping</p>
+                <div className="space-y-0.5">
+                  <p className="text-sm sm:text-base font-serif font-bold text-zinc-900 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-700" />
+                    Pan-India
+                  </p>
+                  <p className="text-[11px] text-zinc-500 font-medium leading-tight">Hardboard Safe Packaging</p>
                 </div>
-                <div>
-                  <p className="text-lg font-bold text-zinc-900">Archival</p>
-                  <p className="text-[11px] text-zinc-500 font-medium">Premium Print Craft</p>
+                <div className="space-y-0.5">
+                  <p className="text-sm sm:text-base font-serif font-bold text-zinc-900 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-700" />
+                    Archival
+                  </p>
+                  <p className="text-[11px] text-zinc-500 font-medium leading-tight">300+ GSM Fade-Proof Print</p>
                 </div>
               </div>
             </div>
@@ -168,7 +190,7 @@ export default async function HomePage() {
             className="group relative bg-white border border-zinc-200 rounded-2xl p-8 hover:shadow-lg transition-all duration-300 overflow-hidden flex flex-col justify-between"
           >
             <div className="absolute top-0 right-0 p-8 text-amber-100 group-hover:text-amber-200 transition-colors">
-              <Frame className="w-32 h-32 stroke-[0.75] transform translate-x-8 -translate-y-8" />
+              <ArtFrameIcon className="w-32 h-32 stroke-[0.75] transform translate-x-8 -translate-y-8" />
             </div>
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200/60 inline-block mb-4">

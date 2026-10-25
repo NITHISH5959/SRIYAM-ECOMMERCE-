@@ -8,6 +8,7 @@ import { STORE_CONFIG } from '@/lib/config';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { ShoppingBag, Menu, X, MessageCircle, ShieldCheck, User, LogOut, Package, MapPin, ChevronDown, CheckCircle2, Truck } from 'lucide-react';
 import SearchBar from './SearchBar';
+import { SacredDiyaIcon } from '@/components/ui/SacredIcons';
 
 // ── Slide-in toast that auto-dismisses ────────────────────────────────────────
 function Toast({ message }: { message: string }) {
@@ -76,8 +77,11 @@ export default function Navbar() {
       {toastMessage && <Toast key={toastMessage + Date.now()} message={toastMessage} />}
 
       {/* Top Banner */}
-      <div className="bg-zinc-900 text-zinc-300 text-[11px] font-medium py-1.5 px-4 text-center tracking-wide border-b border-zinc-800 flex justify-center items-center gap-4">
-        <span>✨ Authentic Sacred Art &amp; Fine Heritage Printing</span>
+      <div className="bg-zinc-950 text-amber-100/90 text-[11px] font-serif py-1.5 px-4 text-center tracking-wider border-b border-zinc-850 flex justify-center items-center gap-2">
+        <SacredDiyaIcon className="w-3 h-3 text-amber-400 flex-shrink-0" />
+        <span>Authentic Sacred Art &amp; Fine Heritage Printing</span>
+        <span className="text-zinc-600 hidden sm:inline">•</span>
+        <span className="text-zinc-400 font-sans text-[10px] hidden sm:inline">Direct from Dharmapuri, Tamil Nadu</span>
       </div>
 
       {/* Main Navbar */}
