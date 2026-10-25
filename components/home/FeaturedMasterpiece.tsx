@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Product } from '@/types';
 import { STORE_CONFIG } from '@/lib/config';
-import { ArrowRight, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, MapPin, BookOpen } from 'lucide-react';
 import { SacredDiyaIcon, ArtFrameIcon } from '@/components/ui/SacredIcons';
 
 interface FeaturedMasterpieceProps {
@@ -89,6 +89,8 @@ export default function FeaturedMasterpiece({ products }: FeaturedMasterpiecePro
                 <div className="w-16 h-16 rounded-2xl bg-white/95 shadow-md flex items-center justify-center text-amber-800 mb-3 border border-amber-200/60">
                   {currentProduct.category?.slug === 'frames' ? (
                     <ArtFrameIcon className="w-8 h-8 text-amber-800" />
+                  ) : currentProduct.category?.slug === 'books' || currentProduct.category?.slug === 'book' ? (
+                    <BookOpen className="w-8 h-8 text-amber-800 stroke-[1.5]" />
                   ) : (
                     <MapPin className="w-8 h-8 stroke-[1.5]" />
                   )}

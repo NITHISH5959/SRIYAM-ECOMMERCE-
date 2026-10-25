@@ -69,6 +69,7 @@ export default function Navbar() {
     { name: 'Shop All', href: '/shop' },
     { name: 'Frames', href: '/shop?category=frames' },
     { name: 'Rack Posters', href: '/shop?category=rack-posters' },
+    { name: 'Books', href: '/shop?category=books' },
   ];
 
   return (

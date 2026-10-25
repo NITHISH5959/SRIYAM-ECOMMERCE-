@@ -90,6 +90,11 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/shop?category=books" className="hover:text-amber-400 transition-colors">
+                  Sacred Books
+                </Link>
+              </li>
+              <li>
                 <Link href="/shop?category=rack-posters" className="hover:text-amber-400 transition-colors text-zinc-400">
                   Paadal Petra Sthalam
                 </Link>

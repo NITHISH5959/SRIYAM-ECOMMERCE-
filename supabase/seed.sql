@@ -9,7 +9,8 @@
 insert into categories (id, name, slug)
 values
   ('11111111-1111-1111-1111-111111111111', 'Frames', 'frames'),
-  ('22222222-2222-2222-2222-222222222222', 'Rack Posters', 'rack-posters')
+  ('22222222-2222-2222-2222-222222222222', 'Rack Posters', 'rack-posters'),
+  ('33333333-3333-3333-3333-333333333333', 'Books', 'books')
 on conflict (slug) do update set name = excluded.name;
 
 -- Insert 12 Products
@@ -29,7 +30,10 @@ values
   -- Rack Posters Category Products
   ('276 Paadal Petra Sthalam', '276-paadal-petra-sthalam', '', 599, 649, '{}', 10, '22222222-2222-2222-2222-222222222222', 200, true),
   ('108 Divya Desam', '108-divya-desam', '', 599, 649, '{}', 10, '22222222-2222-2222-2222-222222222222', 200, true),
-  ('51 Sakthi Peedam', '51-sakthi-peedam', '', 599, 649, '{}', 10, '22222222-2222-2222-2222-222222222222', 200, true)
+  ('51 Sakthi Peedam', '51-sakthi-peedam', '', 599, 649, '{}', 10, '22222222-2222-2222-2222-222222222222', 200, true),
+
+  -- Books Category Products
+  ('Sri Sthala Puranam - Temple History & Sacred Guide', 'sri-sthala-puranam-temple-history-sacred-guide', 'Comprehensive archival scripture and sthala puranam documenting sacred temple legends, rituals, and spiritual history.', 399, 499, '{}', 15, '33333333-3333-3333-3333-333333333333', 350, true)
 on conflict (slug) do update set
   name = excluded.name,
   price = excluded.price,

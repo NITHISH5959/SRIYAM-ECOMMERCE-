@@ -32,6 +32,9 @@ function formatCategoryPreview(productNames: string[], categorySlug: string): st
     if (categorySlug === 'frames') {
       return 'Authentic sacred temple frames crafted with divine reverence and premium framing.';
     }
+    if (categorySlug === 'books' || categorySlug === 'book') {
+      return 'Sacred spiritual literature, sthala puranam scriptures, and temple heritage books.';
+    }
     return 'Archival pilgrimage guides and sacred heritage posters for temple seekers.';
   }
 
@@ -46,6 +49,9 @@ function formatCategoryPreview(productNames: string[], categorySlug: string): st
 
   if (categorySlug === 'frames') {
     return `${joined} framed with divine elegance.`;
+  }
+  if (categorySlug === 'books' || categorySlug === 'book') {
+    return `${joined} publications for spiritual reading & wisdom.`;
   }
   return `${joined} posters for temple enthusiasts & seekers.`;
 }
@@ -76,6 +82,14 @@ export default async function HomePage() {
   const posterCount = posterProducts.length;
   const posterNames = posterProducts.slice(0, 4).map((p) => p.name);
   const posterPreview = formatCategoryPreview(posterNames, 'rack-posters');
+
+  const bookCategory = categories.find((c) => c.slug === 'books' || c.slug === 'book');
+  const bookProducts = products.filter(
+    (p) => p.category_id === bookCategory?.id || p.category?.slug === 'books' || p.category?.slug === 'book'
+  );
+  const bookCount = bookProducts.length;
+  const bookNames = bookProducts.slice(0, 4).map((p) => p.name);
+  const bookPreview = formatCategoryPreview(bookNames, 'books');
 
   // Featured products grid display
   const displayedProducts = featuredMasterpieces.length > 0
@@ -173,7 +187,7 @@ export default async function HomePage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
           {/* Frames Category */}
           {frameCount > 0 ? (
             <Link
@@ -244,6 +258,45 @@ export default async function HomePage() {
                 </h3>
                 <p className="text-sm text-zinc-600 leading-relaxed line-clamp-2">
                   Temple heritage posters: Divya Desam, Sakthi Peedam and Paadal Petra Sthalam.
+                </p>
+              </div>
+              <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+                <span>Coming soon</span>
+              </div>
+            </div>
+          )}
+
+          {/* Books Category */}
+          {bookCount > 0 ? (
+            <Link
+              href="/shop?category=books"
+              aria-label={`View books (${bookCount})`}
+              className="group bg-white border border-zinc-200 rounded-2xl p-6 sm:p-7 flex flex-col justify-between h-full text-left transition-colors duration-200 hover:border-amber-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-800 focus-visible:ring-offset-2"
+            >
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-zinc-900 mb-2">
+                  Sacred Books
+                </h3>
+                <p className="text-sm text-zinc-600 leading-relaxed">
+                  {bookPreview}
+                </p>
+              </div>
+              <div className="mt-6 flex items-center gap-2 text-xs font-bold text-zinc-900 uppercase tracking-widest group-hover:text-amber-800 transition-colors">
+                <span>View books ({bookCount})</span>
+                <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-[2px]" aria-hidden="true" />
+              </div>
+            </Link>
+          ) : (
+            <div
+              aria-disabled="true"
+              className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-7 flex flex-col justify-between h-full text-left cursor-default"
+            >
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-zinc-900 mb-2">
+                  Sacred Books
+                </h3>
+                <p className="text-sm text-zinc-600 leading-relaxed line-clamp-2">
+                  {bookPreview}
                 </p>
               </div>
               <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-zinc-400 uppercase tracking-widest">

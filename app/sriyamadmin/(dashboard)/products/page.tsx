@@ -338,6 +338,7 @@ export default function AdminProductsPage() {
         productToEdit={productToEdit}
         categories={categories}
         onSuccess={loadData}
+        defaultCategoryId={selectedCategory !== 'all' ? selectedCategory : undefined}
       />
     </div>
   );

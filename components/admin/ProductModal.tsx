@@ -24,6 +24,7 @@ interface ProductModalProps {
   productToEdit?: Product | null;
   categories: Category[];
   onSuccess: () => void;
+  defaultCategoryId?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ export default function ProductModal({
   productToEdit,
   categories,
   onSuccess,
+  defaultCategoryId,
 }: ProductModalProps) {
   const [formData, setFormData] = useState<Partial<Product>>({
     name: '',
@@ -69,7 +71,7 @@ export default function ProductModal({
     compare_at_price: '' as unknown as number,
     images: [],
     stock: 10,
-    category_id: categories[0]?.id || '',
+    category_id: defaultCategoryId || categories[0]?.id || '',
     weight_grams: 300,
     is_active: true,
     is_featured: false,
@@ -111,7 +113,7 @@ export default function ProductModal({
         compare_at_price: '' as unknown as number,
         images: [],
         stock: 10,
-        category_id: categories[0]?.id || '',
+        category_id: defaultCategoryId || categories[0]?.id || '',
         weight_grams: 300,
         is_active: true,
         is_featured: false,
@@ -120,7 +122,7 @@ export default function ProductModal({
     setVariants(DEFAULT_VARIANTS.map(v => ({ ...v })));
     setUploadingItems([]);
     setGlobalError(null);
-  }, [productToEdit, categories, isOpen]);
+  }, [productToEdit, categories, isOpen, defaultCategoryId]);
 
   // ── Load existing variants when editing a Frame product (initial open) ────────
   useEffect(() => {

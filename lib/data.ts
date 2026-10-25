@@ -7,6 +7,7 @@ import { formatOrderNumber, isValidOrderNumber } from './orders';
 export const INITIAL_CATEGORIES: Category[] = [
   { id: '11111111-1111-1111-1111-111111111111', name: 'Frames', slug: 'frames' },
   { id: '22222222-2222-2222-2222-222222222222', name: 'Rack Posters', slug: 'rack-posters' },
+  { id: '33333333-3333-3333-3333-333333333333', name: 'Books', slug: 'books' },
 ];
 
 export const INITIAL_PRODUCTS: Product[] = [
@@ -22,6 +23,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   { id: 'p10', name: '276 Paadal Petra Sthalam', slug: '276-paadal-petra-sthalam', description: 'Comprehensive archival poster listing all 276 Paadal Petra Shiva Sthalams with temple details.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '22222222-2222-2222-2222-222222222222', weight_grams: 200, is_active: true, is_featured: true, category: INITIAL_CATEGORIES[1] },
   { id: 'p11', name: '108 Divya Desam', slug: '108-divya-desam', description: 'Sacred poster enumerating the 108 Divya Desams glorified in the Naalayira Divya Prabandham.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '22222222-2222-2222-2222-222222222222', weight_grams: 200, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[1] },
   { id: 'p12', name: '51 Sakthi Peedam', slug: '51-sakthi-peedam', description: 'Detailed heritage poster mapping the 51 Shakti Peethas with pilgrimage reference details.', price: 599, compare_at_price: 649, images: [], stock: 10, category_id: '22222222-2222-2222-2222-222222222222', weight_grams: 200, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[1] },
+  { id: 'p13', name: 'Sri Sthala Puranam - Temple History & Sacred Guide', slug: 'sri-sthala-puranam-temple-history-sacred-guide', description: 'Comprehensive archival scripture and sthala puranam documenting sacred temple legends, rituals, and spiritual history.', price: 399, compare_at_price: 499, images: [], stock: 15, category_id: '33333333-3333-3333-3333-333333333333', weight_grams: 350, is_active: true, is_featured: false, category: INITIAL_CATEGORIES[2] },
 ];
 
 export const INITIAL_COUPONS: Coupon[] = [
@@ -83,7 +85,11 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
       : '*, category:categories(*)';
     let query = supabase.from('products').select(selectClause).eq('is_active', true);
     if (isFiltered) {
-      query = query.eq('category.slug', categorySlug);
+      if (categorySlug === 'book' || categorySlug === 'books') {
+        query = query.in('category.slug', ['books', 'book']);
+      } else {
+        query = query.eq('category.slug', categorySlug);
+      }
     }
     const { data, error } = await query;
     if (!error && data) {
@@ -92,7 +98,8 @@ export async function getProducts(categorySlug?: string): Promise<Product[]> {
   } catch {}
   let result = memoryProducts.filter(p => p.is_active !== false);
   if (categorySlug && categorySlug !== 'all') {
-    const cat = memoryCategories.find(c => c.slug === categorySlug);
+    const targetSlugs = (categorySlug === 'book' || categorySlug === 'books') ? ['books', 'book'] : [categorySlug];
+    const cat = memoryCategories.find(c => targetSlugs.includes(c.slug));
     if (cat) result = result.filter(p => p.category_id === cat.id);
   }
   return result;

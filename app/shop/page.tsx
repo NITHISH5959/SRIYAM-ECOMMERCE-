@@ -57,7 +57,11 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
           <Link href="/" className="hover:text-zinc-900 transition-colors">Home</Link>
           <span>/</span>
           <span className="text-zinc-900 font-medium capitalize">
-            {currentCategory === 'all' ? 'All Products' : currentCategory.replace(/-/g, ' ')}
+            {currentCategory === 'all'
+              ? 'All Products'
+              : currentCategory === 'books' || currentCategory === 'book'
+              ? 'Books'
+              : currentCategory.replace(/-/g, ' ')}
           </span>
         </div>
         <h1 className="text-3xl font-serif font-bold text-zinc-900">
@@ -65,7 +69,11 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
             ? 'All Sacred Products'
             : currentCategory === 'frames'
             ? 'Sacred Frames'
-            : 'Heritage Rack Posters'}
+            : currentCategory === 'rack-posters'
+            ? 'Heritage Rack Posters'
+            : currentCategory === 'books' || currentCategory === 'book'
+            ? 'Sacred Books'
+            : categories.find((c) => c.slug === currentCategory)?.name || currentCategory.replace(/-/g, ' ')}
         </h1>
         <p className="text-xs sm:text-sm text-zinc-500 mt-1">
           Showing {products.length} divine products with standard pricing & high quality print.
