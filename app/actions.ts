@@ -65,30 +65,93 @@ export async function saveProductAction(
     }
 
     // 2. Prepare clean sanitized payload matching PostgreSQL products table schema
-    const name = (productData.name || '').trim();
-    if (!name) {
+    const isUpdate = Boolean(productData.id && isRealUuid(productData.id));
+
+    // Product name validation: mandatory for new products; for updates, only validated if provided
+    const rawName = productData.name !== undefined ? (productData.name || '').trim() : undefined;
+    if (!isUpdate && !rawName) {
       return { success: false, error: 'Product name is required.' };
     }
 
-    const rawSlug = (productData.slug || name).toLowerCase().trim();
-    const cleanSlug = rawSlug
-      .replace(/[^\w\s-]/g, '')
-      .replace(/[\s_-]+/g, '-')
-      .replace(/^-+|-+$/g, '') || `product-${Date.now()}`;
+    const cleanPayload: Record<string, any> = {};
 
-    const cleanPayload: Record<string, any> = {
-      name,
-      slug: cleanSlug,
-      description: productData.description?.trim() || null,
-      price: Math.max(0, Number(productData.price) || 0),
-      compare_at_price: Math.max(0, Number(productData.compare_at_price) || 0),
-      images: Array.isArray(productData.images) ? productData.images.filter(Boolean) : [],
-      stock: Math.max(0, Number(productData.stock) || 0),
-      category_id: productData.category_id && isRealUuid(productData.category_id) ? productData.category_id : null,
-      weight_grams: Math.max(0, Number(productData.weight_grams) || 300),
-      is_active: productData.is_active ?? true,
-      is_featured: productData.is_featured ?? false,
-    };
+    if (rawName !== undefined) {
+      if (!rawName && !isUpdate) {
+        return { success: false, error: 'Product name is required.' };
+      }
+      if (rawName) {
+        cleanPayload.name = rawName;
+      }
+    }
+
+    if (productData.slug !== undefined) {
+      const rawSlug = (productData.slug || cleanPayload.name || '').toLowerCase().trim();
+      const cleanSlug = rawSlug
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || `product-${Date.now()}`;
+      cleanPayload.slug = cleanSlug;
+    } else if (!isUpdate && cleanPayload.name) {
+      const cleanSlug = cleanPayload.name.toLowerCase().trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || `product-${Date.now()}`;
+      cleanPayload.slug = cleanSlug;
+    }
+
+    if (productData.description !== undefined) {
+      cleanPayload.description = productData.description?.trim() || null;
+    } else if (!isUpdate) {
+      cleanPayload.description = null;
+    }
+
+    if (productData.price !== undefined) {
+      cleanPayload.price = Math.max(0, Number(productData.price) || 0);
+    } else if (!isUpdate) {
+      cleanPayload.price = 0;
+    }
+
+    if (productData.compare_at_price !== undefined) {
+      cleanPayload.compare_at_price = Math.max(0, Number(productData.compare_at_price) || 0);
+    } else if (!isUpdate) {
+      cleanPayload.compare_at_price = 0;
+    }
+
+    if (productData.images !== undefined) {
+      cleanPayload.images = Array.isArray(productData.images) ? productData.images.filter(Boolean) : [];
+    } else if (!isUpdate) {
+      cleanPayload.images = [];
+    }
+
+    if (productData.stock !== undefined) {
+      cleanPayload.stock = Math.max(0, Number(productData.stock) || 0);
+    } else if (!isUpdate) {
+      cleanPayload.stock = 0;
+    }
+
+    if (productData.category_id !== undefined) {
+      cleanPayload.category_id = productData.category_id && isRealUuid(productData.category_id) ? productData.category_id : null;
+    } else if (!isUpdate) {
+      cleanPayload.category_id = null;
+    }
+
+    if (productData.weight_grams !== undefined) {
+      cleanPayload.weight_grams = Math.max(0, Number(productData.weight_grams) || 300);
+    } else if (!isUpdate) {
+      cleanPayload.weight_grams = 300;
+    }
+
+    if (productData.is_active !== undefined) {
+      cleanPayload.is_active = productData.is_active;
+    } else if (!isUpdate) {
+      cleanPayload.is_active = true;
+    }
+
+    if (productData.is_featured !== undefined) {
+      cleanPayload.is_featured = productData.is_featured;
+    } else if (!isUpdate) {
+      cleanPayload.is_featured = false;
+    }
 
     const adminSupabase = createAdminClient();
     if (!adminSupabase) {
@@ -109,7 +172,7 @@ export async function saveProductAction(
 
     // Helper to perform upsert/insert with graceful retry if is_featured column is not yet migrated
     async function executeSave(payload: Record<string, any>): Promise<{ data: Product | null; error: any }> {
-      if (productData.id && isRealUuid(productData.id)) {
+      if (isUpdate) {
         const res = await adminSupabase!
           .from('products')
           .update(payload)
@@ -255,3 +318,137 @@ export async function deleteProductAction(id: string): Promise<ActionResponse<bo
     return { success: false, error: err?.message || 'An unexpected error occurred while deleting product.' };
   }
 }
+
+/**
+ * Dedicated Server Action to toggle the is_featured flag for a product.
+ * Atomically updates ONLY the is_featured column in PostgreSQL.
+ * NEVER alters price, stock, images, description, or other fields!
+ */
+export async function toggleProductFeaturedAction(
+  productId: string,
+  isFeatured: boolean
+): Promise<ActionResponse<Product>> {
+  try {
+    const isAdmin = await checkIsAdmin();
+    if (!isAdmin) {
+      return {
+        success: false,
+        error: 'Unauthorized: You must be logged in as an administrator to feature products. Please sign in at /sriyamadmin/login.',
+      };
+    }
+
+    if (!productId || !isRealUuid(productId)) {
+      return { success: false, error: 'Invalid product ID.' };
+    }
+
+    const adminSupabase = createAdminClient();
+    if (!adminSupabase) {
+      try {
+        const saved = await saveProduct({ id: productId, is_featured: isFeatured });
+        await revalidateStorefront();
+        return { success: true, data: saved };
+      } catch (fbErr: any) {
+        return { success: false, error: fbErr?.message || 'Failed to toggle featured status in fallback mode.' };
+      }
+    }
+
+    const { data, error } = await adminSupabase
+      .from('products')
+      .update({ is_featured: isFeatured })
+      .eq('id', productId)
+      .select('*, category:categories(*)')
+      .single();
+
+    if (error || !data) {
+      console.error('[toggleProductFeaturedAction error]', error);
+      return {
+        success: false,
+        error: `Failed to update featured status: ${error?.message || 'Unknown database error'}`,
+      };
+    }
+
+    try {
+      revalidatePath('/');
+      revalidatePath('/shop');
+      revalidatePath('/sriyamadmin/products');
+    } catch (err) {
+      console.error('Failed to revalidate cache paths:', err);
+    }
+
+    return { success: true, data: data as Product };
+  } catch (err: any) {
+    console.error('[toggleProductFeaturedAction unexpected error]', err);
+    return {
+      success: false,
+      error: err?.message || 'An unexpected error occurred while toggling featured status.',
+    };
+  }
+}
+
+/**
+ * Dedicated Server Action to toggle the is_active flag for a product.
+ * Atomically updates ONLY the is_active column in PostgreSQL.
+ * NEVER alters price, stock, images, description, or other fields!
+ */
+export async function toggleProductActiveAction(
+  productId: string,
+  isActive: boolean
+): Promise<ActionResponse<Product>> {
+  try {
+    const isAdmin = await checkIsAdmin();
+    if (!isAdmin) {
+      return {
+        success: false,
+        error: 'Unauthorized: You must be logged in as an administrator to change product status. Please sign in at /sriyamadmin/login.',
+      };
+    }
+
+    if (!productId || !isRealUuid(productId)) {
+      return { success: false, error: 'Invalid product ID.' };
+    }
+
+    const adminSupabase = createAdminClient();
+    if (!adminSupabase) {
+      try {
+        const saved = await saveProduct({ id: productId, is_active: isActive });
+        await revalidateStorefront();
+        return { success: true, data: saved };
+      } catch (fbErr: any) {
+        return { success: false, error: fbErr?.message || 'Failed to update active status in fallback mode.' };
+      }
+    }
+
+    const { data, error } = await adminSupabase
+      .from('products')
+      .update({ is_active: isActive })
+      .eq('id', productId)
+      .select('*, category:categories(*)')
+      .single();
+
+    if (error || !data) {
+      console.error('[toggleProductActiveAction error]', error);
+      return {
+        success: false,
+        error: `Failed to update active status: ${error?.message || 'Unknown database error'}`,
+      };
+    }
+
+    try {
+      revalidatePath('/');
+      revalidatePath('/shop');
+      revalidatePath('/cart');
+      revalidatePath('/sriyamadmin/products');
+    } catch (err) {
+      console.error('Failed to revalidate cache paths:', err);
+    }
+
+    return { success: true, data: data as Product };
+  } catch (err: any) {
+    console.error('[toggleProductActiveAction unexpected error]', err);
+    return {
+      success: false,
+      error: err?.message || 'An unexpected error occurred while toggling product status.',
+    };
+  }
+}
+

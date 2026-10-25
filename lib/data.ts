@@ -271,7 +271,9 @@ export async function saveProduct(product: Partial<Product>): Promise<Product> {
   if (product.id) {
     const idx = memoryProducts.findIndex(p => p.id === product.id);
     if (idx !== -1) {
-      const cat = memoryCategories.find(c => c.id === product.category_id);
+      const cat = product.category_id !== undefined 
+        ? (memoryCategories.find(c => c.id === product.category_id) || null)
+        : memoryProducts[idx].category;
       memoryProducts[idx] = { ...memoryProducts[idx], ...product, category: cat } as Product;
       return memoryProducts[idx];
     }

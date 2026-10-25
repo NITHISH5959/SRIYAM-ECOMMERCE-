@@ -3,12 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { Product, Category } from '@/types';
 import { getAllProductsAdmin, getCategories } from '@/lib/data';
-import { deleteProductAction, revalidateStorefront } from '@/app/actions';
+import { deleteProductAction, revalidateStorefront, toggleProductFeaturedAction } from '@/app/actions';
 import ProductModal from '@/components/admin/ProductModal';
 import PlaceholderImage from '@/components/ui/PlaceholderImage';
-import { Plus, Edit2, Trash2, Search, PackageCheck, AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, PackageCheck, AlertCircle, RefreshCw, Sparkles, Loader2 } from 'lucide-react';
 import { STORE_CONFIG } from '@/lib/config';
-import { saveProductAction } from '@/app/actions';
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -16,6 +15,7 @@ export default function AdminProductsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [togglingFeaturedId, setTogglingFeaturedId] = useState<string | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -57,24 +57,28 @@ export default function AdminProductsPage() {
   };
 
   const handleToggleFeatured = async (product: Product) => {
+    if (togglingFeaturedId === product.id) return;
     const nextVal = !product.is_featured;
+    setTogglingFeaturedId(product.id);
+
+    // Optimistic UI update
     setProducts((prev) =>
       prev.map((p) => (p.id === product.id ? { ...p, is_featured: nextVal } : p))
     );
+
     try {
-      const res = await saveProductAction({
-        id: product.id,
-        name: product.name,
-        slug: product.slug,
-        is_featured: nextVal,
-      });
+      const res = await toggleProductFeaturedAction(product.id, nextVal);
       if (!res.success) {
         console.error('Failed to toggle featured:', res.error);
+        alert(`Failed to update featured status: ${res.error || 'Unknown error'}`);
         await loadData();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Toggle featured error:', err);
+      alert(`Failed to update featured status: ${err?.message || 'Unknown error'}`);
       await loadData();
+    } finally {
+      setTogglingFeaturedId(null);
     }
   };
 
@@ -263,15 +267,24 @@ export default function AdminProductsPage() {
                       <td className="py-3 px-4">
                         <button
                           type="button"
+                          disabled={togglingFeaturedId === product.id}
                           onClick={() => handleToggleFeatured(product)}
                           title={product.is_featured ? 'Click to unfeature from homepage' : 'Click to feature on homepage (Masterpiece)'}
                           className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+                            togglingFeaturedId === product.id
+                              ? 'opacity-60 cursor-not-allowed'
+                              : ''
+                          } ${
                             product.is_featured
                               ? 'bg-amber-100 text-amber-900 border-amber-300 shadow-sm hover:bg-amber-200'
                               : 'bg-zinc-50 text-zinc-400 border-zinc-200 hover:text-zinc-700 hover:bg-zinc-100'
                           }`}
                         >
-                          <Sparkles className={`w-3 h-3 ${product.is_featured ? 'text-amber-700 fill-amber-700' : 'text-zinc-400'}`} />
+                          {togglingFeaturedId === product.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-amber-700" />
+                          ) : (
+                            <Sparkles className={`w-3 h-3 ${product.is_featured ? 'text-amber-700 fill-amber-700' : 'text-zinc-400'}`} />
+                          )}
                           <span>{product.is_featured ? 'Featured' : 'Standard'}</span>
                         </button>
                       </td>
