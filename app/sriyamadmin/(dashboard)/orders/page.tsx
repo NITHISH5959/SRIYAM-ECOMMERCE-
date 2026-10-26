@@ -6,7 +6,8 @@ import { Order } from '@/types';
 import { STORE_CONFIG } from '@/lib/config';
 import {
   Package, ChevronDown, ChevronUp, RefreshCw, Loader2,
-  AlertTriangle, MapPin, CheckCircle2, Truck, Clock, XCircle, DollarSign, Search, X, FileText
+  AlertTriangle, MapPin, CheckCircle2, Truck, Clock, XCircle, DollarSign, Search, X, FileText,
+  ShieldAlert, Lock, Eye, EyeOff, KeyRound, AlertCircle
 } from 'lucide-react';
 
 const STATUSES = ['all', 'pending', 'paid', 'shipped', 'delivered', 'cancelled'] as const;
@@ -28,14 +29,239 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function OrderRow({ order, onStatusChange, onRefund }: {
+function RefundModal({
+  order,
+  onClose,
+  onSuccess,
+}: {
+  order: Order;
+  onClose: () => void;
+  onSuccess: (orderId: string, message: string) => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [confirmText, setConfirmText] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const displayId = order.order_number || order.id;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    const trimmedPassword = password.trim();
+    const trimmedConfirm = confirmText.trim();
+
+    if (!trimmedPassword) {
+      setError('Please enter the refund password.');
+      return;
+    }
+
+    if (trimmedPassword !== 'POOVEUNAKAAGA@123') {
+      setError('Incorrect refund password. Authorization denied.');
+      return;
+    }
+
+    if (!trimmedConfirm) {
+      setError('Please type "CONFIRM" in the confirmation field.');
+      return;
+    }
+
+    if (trimmedConfirm !== 'CONFIRM') {
+      setError('Confirmation mismatch. You must type exactly "CONFIRM" in capital letters.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/razorpay/create-refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.id,
+          razorpay_payment_id: order.razorpay_payment_id,
+          password: trimmedPassword,
+          confirmText: trimmedConfirm,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Refund processing failed.');
+      }
+
+      onSuccess(order.id, data.message || `Refund issued successfully for Order ${displayId}.`);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to process refund. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={e => {
+        if (e.target === e.currentTarget && !loading) onClose();
+      }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl border border-zinc-200 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-red-600 to-rose-700 px-6 py-4 text-white flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center text-white flex-shrink-0">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm tracking-wide text-white uppercase">Authorize Refund</h3>
+              <p className="text-red-100 text-xs">Security Verification Required</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50"
+            aria-label="Close dialog"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Order Details Highlight */}
+          <div className="bg-red-50/70 border border-red-200 rounded-xl p-3.5 text-xs space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="font-semibold text-zinc-600">Order:</span>
+              <span className="font-mono font-bold text-zinc-900 bg-white px-2 py-0.5 rounded border border-zinc-200">
+                {displayId}
+              </span>
+            </div>
+            {order.shipping_address?.name && (
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-zinc-600">Customer:</span>
+                <span className="font-medium text-zinc-900 truncate max-w-[200px]">
+                  {order.shipping_address.name}
+                </span>
+              </div>
+            )}
+            <div className="pt-2 border-t border-red-200/80 flex justify-between items-center">
+              <span className="font-bold text-zinc-900">Total Refund:</span>
+              <span className="font-extrabold text-red-700 text-base">
+                {STORE_CONFIG.defaultPricing.currency}{order.total?.toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+            <p>
+              This action will refund the payment via Razorpay and mark the order as <strong>Cancelled</strong>.
+            </p>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-800 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Field 1: Enter Password */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-zinc-800">
+              1. Enter the Password <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-400">
+                <Lock className="w-4 h-4" />
+              </div>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => {
+                  setPassword(e.target.value);
+                  if (error) setError('');
+                }}
+                disabled={loading}
+                autoFocus
+                placeholder="Enter password"
+                className="w-full pl-9 pr-10 py-2.5 text-xs bg-zinc-50 border border-zinc-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600 transition-all font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-zinc-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Field 2: Type CONFIRM */}
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-baseline">
+              <label className="block text-xs font-bold text-zinc-800">
+                2. Type CONFIRM <span className="text-red-500">*</span>
+              </label>
+              <span className="text-[10px] text-zinc-500 font-medium">
+                Type <span className="text-red-600 font-mono font-bold">CONFIRM</span> to verify
+              </span>
+            </div>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-400">
+                <KeyRound className="w-4 h-4" />
+              </div>
+              <input
+                type="text"
+                value={confirmText}
+                onChange={e => {
+                  setConfirmText(e.target.value);
+                  if (error) setError('');
+                }}
+                disabled={loading}
+                placeholder="Type CONFIRM"
+                className="w-full pl-9 pr-3 py-2.5 text-xs bg-zinc-50 border border-zinc-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600 transition-all font-mono tracking-wider uppercase placeholder:normal-case placeholder:tracking-normal"
+              />
+            </div>
+          </div>
+
+          {/* Modal Actions */}
+          <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-zinc-100">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="px-4 py-2 text-xs font-semibold text-zinc-600 hover:text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !password || !confirmText}
+              className="px-5 py-2 text-xs font-bold uppercase tracking-wider text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-xl shadow-md shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
+              {loading ? 'Issuing Refund...' : 'Confirm Refund'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function OrderRow({ order, onStatusChange, onRequestRefund }: {
   order: Order;
   onStatusChange: (id: string, status: Order['status']) => void;
-  onRefund: (id: string, paymentId: string) => void;
+  onRequestRefund: (order: Order) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const [refunding, setRefunding] = useState(false);
   const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   const [invoiceError, setInvoiceError] = useState('');
   const displayId = order.order_number || order.id;
@@ -44,13 +270,6 @@ function OrderRow({ order, onStatusChange, onRefund }: {
     setUpdating(true);
     await onStatusChange(order.id, newStatus);
     setUpdating(false);
-  };
-
-  const handleRefund = async () => {
-    if (!confirm(`Issue refund for order ${displayId}?\n\nThis will cancel the order and attempt to refund ₹${order.total} via Razorpay.`)) return;
-    setRefunding(true);
-    await onRefund(order.id, order.razorpay_payment_id ?? '');
-    setRefunding(false);
   };
 
   return (
@@ -175,11 +394,11 @@ function OrderRow({ order, onStatusChange, onRefund }: {
             {/* Refund */}
             {(order.status === 'paid' || order.status === 'shipped') && order.razorpay_payment_id && (
               <button
-                onClick={handleRefund} disabled={refunding}
+                onClick={() => onRequestRefund(order)}
                 className="flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs uppercase rounded-lg transition-colors"
               >
-                {refunding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DollarSign className="w-3.5 h-3.5" />}
-                {refunding ? 'Issuing Refund...' : 'Issue Refund'}
+                <DollarSign className="w-3.5 h-3.5" />
+                Issue Refund
               </button>
             )}
           </div>
@@ -195,7 +414,9 @@ export default function AdminOrdersPage() {
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [refundTargetOrder, setRefundTargetOrder] = useState<Order | null>(null);
 
   // Always load ALL orders; filtering is done client-side so tab counts stay accurate.
   const load = useCallback(async () => {
@@ -245,16 +466,6 @@ export default function AdminOrdersPage() {
     else setError(data.message || 'Failed to update status');
   };
 
-  const handleRefund = async (orderId: string, paymentId: string) => {
-    const res = await fetch('/api/razorpay/create-refund', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId, razorpay_payment_id: paymentId }),
-    });
-    const data = await res.json();
-    if (data.success) setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'cancelled' } : o));
-    else setError(data.message || 'Refund failed');
-  };
-
   // Counts computed from all orders (not the filtered view) so every tab badge is accurate
   const counts: Record<string, number> = {};
   STATUSES.forEach(s => { counts[s] = s === 'all' ? allOrders.length : allOrders.filter(o => o.status === s).length; });
@@ -277,6 +488,14 @@ export default function AdminOrdersPage() {
           </button>
         </div>
       </div>
+
+      {successMessage && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-medium text-emerald-800 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+          <span>{successMessage}</span>
+          <button onClick={() => setSuccessMessage('')} className="ml-auto font-bold underline">Dismiss</button>
+        </div>
+      )}
 
       {error && (
         <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-medium text-red-800 flex items-center gap-2">
@@ -344,9 +563,26 @@ export default function AdminOrdersPage() {
       ) : (
         <div className="space-y-4">
           {orders.map(order => (
-            <OrderRow key={order.id} order={order} onStatusChange={handleStatusChange} onRefund={handleRefund} />
+            <OrderRow
+              key={order.id}
+              order={order}
+              onStatusChange={handleStatusChange}
+              onRequestRefund={setRefundTargetOrder}
+            />
           ))}
         </div>
+      )}
+
+      {/* Security Verification Refund Modal */}
+      {refundTargetOrder && (
+        <RefundModal
+          order={refundTargetOrder}
+          onClose={() => setRefundTargetOrder(null)}
+          onSuccess={(orderId, msg) => {
+            setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'cancelled' } : o));
+            setSuccessMessage(msg);
+          }}
+        />
       )}
     </div>
   );

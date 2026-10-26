@@ -3,6 +3,8 @@ import Razorpay from 'razorpay';
 import { updateOrderStatus, getOrderById } from '@/lib/data';
 import { checkIsAdmin } from '@/lib/supabase/server';
 
+const REFUND_AUTH_PASSWORD = process.env.ADMIN_REFUND_PASSWORD || 'POOVEUNAKAAGA@123';
+
 export async function POST(request: Request) {
   try {
     const isAdmin = await checkIsAdmin();
@@ -11,10 +13,25 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { orderId, razorpay_payment_id } = body;
+    const { orderId, razorpay_payment_id, password, confirmText } = body;
 
     if (!orderId || !razorpay_payment_id) {
       return NextResponse.json({ success: false, message: 'Missing orderId or payment ID' }, { status: 400 });
+    }
+
+    // Security Verification: Check password and CONFIRM keyword
+    if (!password || password !== REFUND_AUTH_PASSWORD) {
+      return NextResponse.json(
+        { success: false, message: 'Invalid refund password. Access denied.' },
+        { status: 403 }
+      );
+    }
+
+    if (!confirmText || confirmText.trim() !== 'CONFIRM') {
+      return NextResponse.json(
+        { success: false, message: 'Confirmation required. Must type CONFIRM.' },
+        { status: 400 }
+      );
     }
 
     const key_id = process.env.RAZORPAY_KEY_ID || '';

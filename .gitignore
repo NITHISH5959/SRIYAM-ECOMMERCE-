@@ -27,3 +27,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# scratch and test samples
+samples/
+convert_pdf_to_png.py
+generate-test-invoices.ts
